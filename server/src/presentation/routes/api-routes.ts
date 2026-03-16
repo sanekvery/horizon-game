@@ -52,5 +52,67 @@ export function createApiRoutes(gameService: GameService): Router {
     res.json(state.roles);
   });
 
+  // Get lobby info (available roles for online distribution)
+  router.get('/lobby', (_req, res) => {
+    const state = gameService.getState();
+    if (!state) {
+      res.status(404).json({ error: 'Сессия не найдена' });
+      return;
+    }
+
+    if (state.settings.gamePhase !== 'distribution') {
+      res.status(400).json({ error: 'Распределение ролей не активно' });
+      return;
+    }
+
+    const availableRoles = gameService.getAvailableRoles();
+    const allActiveRoles = state.roles
+      .filter((r) => r.isActive)
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        claimedBy: r.claimedBy,
+      }));
+
+    res.json({
+      sessionId: state.sessionId,
+      phase: state.settings.gamePhase,
+      playerCount: state.settings.playerCount,
+      difficulty: state.settings.difficulty,
+      availableRoles,
+      allActiveRoles,
+      claimedCount: allActiveRoles.filter((r) => r.claimedBy !== null).length,
+      totalCount: allActiveRoles.length,
+    });
+  });
+
+  // Claim role (for online distribution)
+  router.post('/claim-role', (req, res) => {
+    const { roleId, playerName } = req.body as { roleId?: number; playerName?: string };
+
+    if (!roleId || !playerName) {
+      res.status(400).json({ error: 'Требуется roleId и playerName' });
+      return;
+    }
+
+    const result = gameService.claimRole(roleId, playerName.trim());
+    if (result.success) {
+      res.json({ success: true, token: result.token });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
+    }
+  });
+
+  // Get game settings
+  router.get('/settings', (_req, res) => {
+    const state = gameService.getState();
+    if (!state) {
+      res.status(404).json({ error: 'Сессия не найдена' });
+      return;
+    }
+
+    res.json(state.settings);
+  });
+
   return router;
 }

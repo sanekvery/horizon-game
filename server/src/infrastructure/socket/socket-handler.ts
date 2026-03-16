@@ -1,6 +1,6 @@
 import type { Server, Socket } from 'socket.io';
 import type { GameService } from '../../application/services/game-service.js';
-import type { ZoneName, ResourceName } from '../../domain/entities/game-state.js';
+import type { ZoneName, ResourceName, Difficulty, DistributionMode, GamePhase } from '../../domain/entities/game-state.js';
 
 interface SocketData {
   token?: string;
@@ -191,6 +191,64 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
       broadcastState();
     });
 
+    // Admin: configure game settings
+    socket.on(
+      'admin:configure-game',
+      ({
+        playerCount,
+        difficulty,
+        distributionMode,
+      }: {
+        playerCount: number;
+        difficulty: Difficulty;
+        distributionMode: DistributionMode;
+      }) => {
+        if (!data.isAdmin) return;
+        const result = gameService.configureGame({ playerCount, difficulty, distributionMode });
+        if (result) {
+          broadcastState();
+          socket.emit('admin:configure-success', { playerCount, difficulty, distributionMode });
+        } else {
+          socket.emit('admin:configure-error', { error: 'Не удалось настроить игру' });
+        }
+      }
+    );
+
+    // Admin: start game (distribute resources)
+    socket.on('admin:start-game', () => {
+      if (!data.isAdmin) return;
+      const result = gameService.startGame();
+      if (result.success) {
+        broadcastState();
+        socket.emit('admin:start-game-success');
+        io.emit('game:started');
+      } else {
+        socket.emit('admin:start-game-error', { error: result.error });
+      }
+    });
+
+    // Admin: finish game
+    socket.on('admin:finish-game', () => {
+      if (!data.isAdmin) return;
+      gameService.finishGame();
+      broadcastState();
+      io.emit('game:finished');
+    });
+
+    // Admin: set game phase
+    socket.on('admin:set-game-phase', (phase: GamePhase) => {
+      if (!data.isAdmin) return;
+      gameService.setGamePhase(phase);
+      broadcastState();
+    });
+
+    // Admin: unclaim role (remove player from role)
+    socket.on('admin:unclaim-role', (roleId: number) => {
+      if (!data.isAdmin) return;
+      gameService.unclaimRole(roleId);
+      broadcastState();
+    });
+
     // Admin: give resource to player
     socket.on(
       'admin:give-resource',
@@ -220,6 +278,23 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
         socket.emit('admin:upgrade-error', { zone, error: result.error });
       }
     });
+
+    // Player: claim role (for online distribution)
+    socket.on(
+      'player:claim-role',
+      ({ roleId, playerName }: { roleId: number; playerName: string }) => {
+        const result = gameService.claimRole(roleId, playerName);
+        if (result.success && result.token) {
+          // Save token to socket data
+          data.token = result.token;
+          socket.join(`player:${roleId}`);
+          broadcastState();
+          socket.emit('player:claim-success', { roleId, token: result.token });
+        } else {
+          socket.emit('player:claim-error', { error: result.error });
+        }
+      }
+    );
 
     // Player actions
     socket.on('player:vote', ({ voteId, optionId }: { voteId: string; optionId: string }) => {

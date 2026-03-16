@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import scenarioData from '../data/scenario.json';
 import crisesData from '../data/crises.json';
@@ -7,6 +8,13 @@ import { getUpgradeCost, canAffordUpgrade } from '../data/zone-upgrade-costs';
 import type { GameState, ResourceName, ZoneName } from '../types/game-state';
 import { RESOURCE_ICONS } from '../types/game-state';
 import type { Crisis, GameRole } from '../types/game-data';
+
+const GAME_PHASE_NAMES = {
+  setup: 'Настройка',
+  distribution: 'Распределение',
+  playing: 'Игра',
+  finished: 'Завершена',
+} as const;
 
 type Page = 'scenario' | 'resources' | 'zones' | 'votes' | 'participants' | 'promises' | 'settings';
 
@@ -159,6 +167,7 @@ interface SidebarProps {
 }
 
 function Sidebar({ currentPage, setCurrentPage, currentAct, state, gameState }: SidebarProps) {
+  const navigate = useNavigate();
   const navItems: { id: Page; label: string; icon: string }[] = [
     { id: 'scenario', label: 'Сценарий', icon: '📋' },
     { id: 'zones', label: 'Зоны карты', icon: '🗺️' },
@@ -170,6 +179,8 @@ function Sidebar({ currentPage, setCurrentPage, currentAct, state, gameState }: 
   ];
 
   const connectedCount = state.roles.filter((r) => r.connected).length;
+  const activeRoles = state.roles.filter((r) => r.isActive);
+  const claimedCount = activeRoles.filter((r) => r.claimedBy !== null).length;
 
   const handleEmergencyPause = () => {
     if (confirm('Остановить игру? Таймер будет приостановлен.')) {
@@ -183,6 +194,39 @@ function Sidebar({ currentPage, setCurrentPage, currentAct, state, gameState }: 
       <div className="p-6 border-b border-[#415A77]/30">
         <h1 className="text-xl font-bold text-[#E0E1DD]">Проект Горизонт</h1>
         <p className="text-[#778DA9] text-sm mt-1">Панель управления</p>
+
+        {/* Game Phase Badge */}
+        <div className="mt-3 flex items-center gap-2">
+          <span className={`px-2 py-1 rounded text-xs font-medium ${
+            state.settings.gamePhase === 'playing' ? 'bg-green-900/50 text-green-400' :
+            state.settings.gamePhase === 'distribution' ? 'bg-yellow-900/50 text-yellow-400' :
+            state.settings.gamePhase === 'finished' ? 'bg-gray-700 text-gray-400' :
+            'bg-blue-900/50 text-blue-400'
+          }`}>
+            {GAME_PHASE_NAMES[state.settings.gamePhase]}
+          </span>
+          <span className="text-[#778DA9] text-xs">
+            {state.settings.playerCount} игроков
+          </span>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="p-4 border-b border-[#415A77]/30 space-y-2">
+        <button
+          onClick={() => navigate('/setup')}
+          className="w-full flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#D4A017] to-[#B8860B] text-[#0D1B2A] rounded-lg font-medium hover:opacity-90 transition-opacity"
+        >
+          <span>🎮</span>
+          <span>Настройка игры</span>
+        </button>
+        <button
+          onClick={() => navigate('/qr')}
+          className="w-full flex items-center gap-2 px-4 py-2 bg-[#415A77] hover:bg-[#778DA9] text-[#E0E1DD] rounded-lg transition-colors"
+        >
+          <span>📱</span>
+          <span>QR-коды</span>
+        </button>
       </div>
 
       {/* Navigation */}
@@ -216,10 +260,37 @@ function Sidebar({ currentPage, setCurrentPage, currentAct, state, gameState }: 
           </div>
         </div>
 
+        {/* Role distribution status */}
+        {state.settings.gamePhase === 'distribution' && (
+          <div className="bg-[#0D1B2A] rounded-lg p-3">
+            <div className="text-[#778DA9] text-xs uppercase tracking-wide">Распределение</div>
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-[#E0E1DD]">Занято ролей:</span>
+              <span className={`font-semibold ${claimedCount === activeRoles.length ? 'text-emerald-400' : 'text-yellow-400'}`}>
+                {claimedCount}/{activeRoles.length}
+              </span>
+            </div>
+            <div className="mt-2 bg-[#415A77]/30 rounded-full h-2 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-[#D4A017] to-[#B8860B] transition-all"
+                style={{ width: `${(claimedCount / activeRoles.length) * 100}%` }}
+              />
+            </div>
+            {claimedCount === activeRoles.length && (
+              <button
+                onClick={() => gameState.startGame()}
+                className="w-full mt-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Начать игру
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Connection status */}
         <div className="flex items-center justify-between text-sm">
           <span className="text-[#778DA9]">Онлайн:</span>
-          <span className="text-emerald-400 font-semibold">{connectedCount}/20</span>
+          <span className="text-emerald-400 font-semibold">{connectedCount}/{activeRoles.length}</span>
         </div>
 
         {/* Timer status */}

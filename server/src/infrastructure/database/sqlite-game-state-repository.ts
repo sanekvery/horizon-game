@@ -79,6 +79,8 @@ export class SqliteGameStateRepository implements GameStateRepository {
       secretRevealed: false,
       promise: null,
       resources: { energy: 0, materials: 0, food: 0, knowledge: 0 },
+      isActive: true,
+      claimedBy: null,
     }));
 
     const initialState: GameState = {
@@ -115,6 +117,12 @@ export class SqliteGameStateRepository implements GameStateRepository {
       candlesLit: [],
       fogRevealed: false,
       promises: [],
+      settings: {
+        playerCount: 20,
+        difficulty: 'normal',
+        distributionMode: 'qr',
+        gamePhase: 'setup',
+      },
     };
 
     this.save(initialState);

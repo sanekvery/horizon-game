@@ -5,6 +5,10 @@ import type {
   ResourceName,
   Vote,
   VoteOption,
+  Difficulty,
+  DistributionMode,
+  GamePhase,
+  GameSettings,
 } from '../../domain/entities/game-state.js';
 import type { GameStateRepository } from '../../domain/repositories/game-state-repository.js';
 import {
@@ -12,6 +16,8 @@ import {
   canAffordUpgrade,
   subtractCost,
 } from '../../domain/entities/zone-upgrade-costs.js';
+import { getActiveRoleIds } from '../../domain/entities/role-priority.js';
+import { calculateDistributedResources } from '../../domain/entities/difficulty-config.js';
 
 export interface UpgradeResult {
   success: boolean;
@@ -480,5 +486,223 @@ export class GameService {
     const updatedState: GameState = { ...state, zones: updatedZones };
     this.repository.save(updatedState);
     return { success: true, newLevel, state: updatedState };
+  }
+
+  // ============ GAME SETUP & CONFIGURATION ============
+
+  /**
+   * Настройка игры перед началом.
+   * Активирует нужное количество ролей по приоритету.
+   */
+  configureGame(config: {
+    playerCount: number;
+    difficulty: Difficulty;
+    distributionMode: DistributionMode;
+  }): GameState | null {
+    const state = this.getState();
+    if (!state) return null;
+
+    const activeRoleIds = getActiveRoleIds(config.playerCount);
+
+    const updatedRoles = state.roles.map((role) => ({
+      ...role,
+      isActive: activeRoleIds.includes(role.id),
+      claimedBy: null,
+      resources: { energy: 0, materials: 0, food: 0, knowledge: 0 },
+    }));
+
+    const updatedSettings: GameSettings = {
+      playerCount: config.playerCount,
+      difficulty: config.difficulty,
+      distributionMode: config.distributionMode,
+      gamePhase: 'distribution',
+    };
+
+    const updatedState: GameState = {
+      ...state,
+      roles: updatedRoles,
+      settings: updatedSettings,
+    };
+
+    this.repository.save(updatedState);
+    return updatedState;
+  }
+
+  /**
+   * Игрок занимает роль (для онлайн-распределения).
+   */
+  claimRole(
+    roleId: number,
+    playerName: string
+  ): { success: boolean; error?: string; state?: GameState; token?: string } {
+    const state = this.getState();
+    if (!state) return { success: false, error: 'Нет активной сессии' };
+
+    if (state.settings.gamePhase !== 'distribution') {
+      return { success: false, error: 'Распределение ролей не активно' };
+    }
+
+    const role = state.roles.find((r) => r.id === roleId);
+    if (!role) {
+      return { success: false, error: 'Роль не найдена' };
+    }
+
+    if (!role.isActive) {
+      return { success: false, error: 'Роль не активна в этой игре' };
+    }
+
+    if (role.claimedBy !== null) {
+      return { success: false, error: 'Роль уже занята' };
+    }
+
+    const updatedRoles = state.roles.map((r) =>
+      r.id === roleId ? { ...r, claimedBy: playerName } : r
+    );
+
+    const updatedState: GameState = { ...state, roles: updatedRoles };
+    this.repository.save(updatedState);
+
+    return { success: true, state: updatedState, token: role.token };
+  }
+
+  /**
+   * Освободить роль (админ может снять игрока).
+   */
+  unclaimRole(roleId: number): GameState | null {
+    const state = this.getState();
+    if (!state) return null;
+
+    const updatedRoles = state.roles.map((r) =>
+      r.id === roleId ? { ...r, claimedBy: null } : r
+    );
+
+    const updatedState: GameState = { ...state, roles: updatedRoles };
+    this.repository.save(updatedState);
+    return updatedState;
+  }
+
+  /**
+   * Проверить готовность к старту (все активные роли заняты).
+   */
+  isReadyToStart(): boolean {
+    const state = this.getState();
+    if (!state) return false;
+
+    const activeRoles = state.roles.filter((r) => r.isActive);
+    return activeRoles.every((r) => r.claimedBy !== null);
+  }
+
+  /**
+   * Получить список свободных ролей.
+   */
+  getAvailableRoles(): Array<{ id: number; name: string; isActive: boolean; claimedBy: string | null }> {
+    const state = this.getState();
+    if (!state) return [];
+
+    return state.roles
+      .filter((r) => r.isActive && r.claimedBy === null)
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        isActive: r.isActive,
+        claimedBy: r.claimedBy,
+      }));
+  }
+
+  /**
+   * Начать игру — раздать ресурсы и перейти в фазу playing.
+   */
+  startGame(): { success: boolean; error?: string; state?: GameState } {
+    const state = this.getState();
+    if (!state) return { success: false, error: 'Нет активной сессии' };
+
+    if (state.settings.gamePhase !== 'distribution') {
+      return { success: false, error: 'Игра не в фазе распределения' };
+    }
+
+    // Для онлайн-распределения все роли должны быть заняты
+    if (state.settings.distributionMode === 'online') {
+      const activeRoles = state.roles.filter((r) => r.isActive);
+      const unclaimedRoles = activeRoles.filter((r) => r.claimedBy === null);
+      if (unclaimedRoles.length > 0) {
+        return {
+          success: false,
+          error: `Не все роли заняты. Осталось: ${unclaimedRoles.length}`,
+        };
+      }
+    }
+
+    // Раздаём ресурсы если не manual режим
+    let updatedRoles = state.roles;
+    if (state.settings.difficulty !== 'manual') {
+      const resources = calculateDistributedResources(
+        state.settings.playerCount,
+        state.settings.difficulty
+      );
+
+      updatedRoles = state.roles.map((role) =>
+        role.isActive
+          ? { ...role, resources }
+          : role
+      );
+    }
+
+    const updatedSettings: GameSettings = {
+      ...state.settings,
+      gamePhase: 'playing',
+    };
+
+    const updatedState: GameState = {
+      ...state,
+      roles: updatedRoles,
+      settings: updatedSettings,
+    };
+
+    this.repository.save(updatedState);
+    return { success: true, state: updatedState };
+  }
+
+  /**
+   * Завершить игру.
+   */
+  finishGame(): GameState | null {
+    const state = this.getState();
+    if (!state) return null;
+
+    const updatedSettings: GameSettings = {
+      ...state.settings,
+      gamePhase: 'finished',
+    };
+
+    const updatedState: GameState = { ...state, settings: updatedSettings };
+    this.repository.save(updatedState);
+    return updatedState;
+  }
+
+  /**
+   * Обновить фазу игры.
+   */
+  setGamePhase(phase: GamePhase): GameState | null {
+    const state = this.getState();
+    if (!state) return null;
+
+    const updatedSettings: GameSettings = {
+      ...state.settings,
+      gamePhase: phase,
+    };
+
+    const updatedState: GameState = { ...state, settings: updatedSettings };
+    this.repository.save(updatedState);
+    return updatedState;
+  }
+
+  /**
+   * Получить лобби-токен для онлайн-распределения.
+   * Это просто sessionId, который используется как идентификатор лобби.
+   */
+  getLobbyToken(): string | null {
+    const state = this.getState();
+    if (!state) return null;
+    return state.sessionId;
   }
 }

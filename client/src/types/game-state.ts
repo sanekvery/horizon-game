@@ -37,6 +37,19 @@ export interface Role {
   readonly secretRevealed: boolean;
   readonly promise: string | null;
   readonly resources: PlayerResources;
+  readonly isActive: boolean;
+  readonly claimedBy: string | null;
+}
+
+export type Difficulty = 'easy' | 'normal' | 'hard' | 'manual';
+export type DistributionMode = 'qr' | 'online';
+export type GamePhase = 'setup' | 'distribution' | 'playing' | 'finished';
+
+export interface GameSettings {
+  readonly playerCount: number;
+  readonly difficulty: Difficulty;
+  readonly distributionMode: DistributionMode;
+  readonly gamePhase: GamePhase;
 }
 
 export interface VoteOption {
@@ -74,6 +87,7 @@ export interface GameState {
   readonly candlesLit: number[];
   readonly fogRevealed: boolean;
   readonly promises: Promise[];
+  readonly settings: GameSettings;
 }
 
 export type ZoneName = 'center' | 'residential' | 'industrial' | 'green' | 'unknown';

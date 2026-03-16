@@ -4,6 +4,8 @@ import { MapProjection } from './pages/MapProjection';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { MobilePlayer } from './pages/MobilePlayer';
 import { QRCodesPage } from './pages/QRCodesPage';
+import { GameSetup } from './pages/GameSetup';
+import { RoleLobby } from './pages/RoleLobby';
 
 // Страница входа (обход ngrok interstitial)
 function JoinPage() {
@@ -77,7 +79,9 @@ function App() {
         <Routes>
           <Route path="/map" element={<MapProjection />} />
           <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/setup" element={<GameSetup />} />
           <Route path="/qr" element={<QRCodesPage />} />
+          <Route path="/lobby" element={<RoleLobby />} />
           <Route path="/join/:token" element={<JoinPage />} />
           <Route path="/play/:token" element={<MobilePlayer />} />
           <Route path="/" element={<Navigate to="/map" replace />} />

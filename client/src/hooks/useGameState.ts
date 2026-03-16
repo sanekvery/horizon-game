@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSocket } from './useSocket';
-import type { GameState, ZoneName, ResourceName } from '../types/game-state';
+import type { GameState, ZoneName, ResourceName, Difficulty, DistributionMode, GamePhase } from '../types/game-state';
 
 interface UseGameStateReturn {
   state: GameState | null;
@@ -13,6 +13,7 @@ interface UseGameStateReturn {
   castVote: (voteId: string, optionId: string) => void;
   setPromise: (text: string, deadline: string) => void;
   contributeToZone: (zone: ZoneName, resource: ResourceName, amount: number) => void;
+  claimRole: (roleId: number, playerName: string) => void;
 
   // Admin actions
   authenticateAdmin: (password: string) => void;
@@ -33,6 +34,11 @@ interface UseGameStateReturn {
   resetSession: () => void;
   giveResource: (roleId: number, resource: ResourceName, amount: number) => void;
   upgradeZone: (zone: ZoneName) => void;
+  configureGame: (playerCount: number, difficulty: Difficulty, distributionMode: DistributionMode) => void;
+  startGame: () => void;
+  finishGame: () => void;
+  setGamePhase: (phase: GamePhase) => void;
+  unclaimRole: (roleId: number) => void;
 }
 
 export function useGameState(): UseGameStateReturn {
@@ -92,6 +98,13 @@ export function useGameState(): UseGameStateReturn {
   const contributeToZone = useCallback(
     (zone: ZoneName, resource: ResourceName, amount: number) => {
       emit('player:contribute', { zone, resource, amount });
+    },
+    [emit]
+  );
+
+  const claimRole = useCallback(
+    (roleId: number, playerName: string) => {
+      emit('player:claim-role', { roleId, playerName });
     },
     [emit]
   );
@@ -171,6 +184,29 @@ export function useGameState(): UseGameStateReturn {
     emit('admin:upgrade-zone', zone);
   }, [emit]);
 
+  const configureGame = useCallback(
+    (playerCount: number, difficulty: Difficulty, distributionMode: DistributionMode) => {
+      emit('admin:configure-game', { playerCount, difficulty, distributionMode });
+    },
+    [emit]
+  );
+
+  const startGame = useCallback(() => {
+    emit('admin:start-game');
+  }, [emit]);
+
+  const finishGame = useCallback(() => {
+    emit('admin:finish-game');
+  }, [emit]);
+
+  const setGamePhase = useCallback((phase: GamePhase) => {
+    emit('admin:set-game-phase', phase);
+  }, [emit]);
+
+  const unclaimRole = useCallback((roleId: number) => {
+    emit('admin:unclaim-role', roleId);
+  }, [emit]);
+
   return {
     state,
     isConnected,
@@ -180,6 +216,7 @@ export function useGameState(): UseGameStateReturn {
     castVote,
     setPromise,
     contributeToZone,
+    claimRole,
     authenticateAdmin,
     isAdmin,
     setAct,
@@ -198,5 +235,10 @@ export function useGameState(): UseGameStateReturn {
     resetSession,
     giveResource,
     upgradeZone,
+    configureGame,
+    startGame,
+    finishGame,
+    setGamePhase,
+    unclaimRole,
   };
 }

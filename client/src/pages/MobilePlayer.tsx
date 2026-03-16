@@ -3,9 +3,10 @@ import { useParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import rolesData from '../data/roles.json';
 import crisesData from '../data/crises.json';
-import type { Role, Vote, ResourceName, ZoneName } from '../types/game-state';
-import { RESOURCE_ICONS } from '../types/game-state';
+import type { Role, Vote, ResourceName, ZoneName, Zone } from '../types/game-state';
+import { RESOURCE_ICONS, ZONE_NAMES_RU } from '../types/game-state';
 import type { GameRole, Crisis } from '../types/game-data';
+import { getUpgradeCost, canAffordUpgrade } from '../data/zone-upgrade-costs';
 
 type Screen =
   | 'welcome'
@@ -261,6 +262,7 @@ export function MobilePlayer() {
             onRevealSecret={handleRevealSecret}
             onCancelReveal={() => setShowSecretConfirm(false)}
             onContribute={contributeToZone}
+            zoneData={roleData.zone !== 'unknown' && state ? state.zones[roleData.zone as Exclude<ZoneName, 'unknown'>] : undefined}
           />
         )}
 
@@ -367,6 +369,7 @@ interface RoleCardScreenProps {
   onRevealSecret: () => void;
   onCancelReveal: () => void;
   onContribute: (zone: ZoneName, resource: ResourceName, amount: number) => void;
+  zoneData?: Zone;
 }
 
 const RESOURCE_NAMES: Record<ResourceName, string> = {
@@ -384,11 +387,21 @@ function RoleCardScreen({
   onRevealSecret,
   onCancelReveal,
   onContribute,
+  zoneData,
 }: RoleCardScreenProps) {
   const [showContribute, setShowContribute] = useState(false);
+  const [contributeAmount, setContributeAmount] = useState<Record<ResourceName, number>>({
+    energy: 1,
+    materials: 1,
+    food: 1,
+    knowledge: 1,
+  });
   const resources: ResourceName[] = ['energy', 'materials', 'food', 'knowledge'];
   const zone = roleData.zone as ZoneName;
-  const canContribute = zone !== 'unknown';
+  const canContribute = zone !== 'unknown' && zoneData;
+
+  const upgradeCost = zoneData ? getUpgradeCost(zoneData.level) : null;
+  const canUpgrade = upgradeCost && zoneData && canAffordUpgrade(zoneData.resources, upgradeCost);
 
   return (
     <div className="min-h-screen flex flex-col p-4">
@@ -396,6 +409,10 @@ function RoleCardScreen({
       <div className="text-center py-4 border-b border-[#415A77]/30 mb-4">
         <h1 className="text-xl font-bold text-[#D4A017]">{role.name}</h1>
         <p className="text-[#778DA9] text-sm">{roleData.archetype}</p>
+        <div className="mt-2 inline-flex items-center gap-2 text-xs bg-[#1B263B] px-3 py-1 rounded-full">
+          <span className="text-[#778DA9]">Зона:</span>
+          <span className="text-[#E0E1DD] font-medium">{ZONE_NAMES_RU[zone as keyof typeof ZONE_NAMES_RU] || zone}</span>
+        </div>
       </div>
 
       {/* Personal Resources */}
@@ -421,7 +438,7 @@ function RoleCardScreen({
             onClick={() => setShowContribute(!showContribute)}
             className="w-full mt-3 py-2 bg-[#415A77]/50 hover:bg-[#415A77] rounded-lg text-[#E0E1DD] text-sm transition-colors"
           >
-            {showContribute ? '▲ Свернуть' : '▼ Внести в зону "' + getZoneName(zone) + '"'}
+            {showContribute ? '▲ Свернуть' : '▼ Внести в зону'}
           </button>
         )}
 
@@ -432,26 +449,105 @@ function RoleCardScreen({
             <div className="grid grid-cols-4 gap-2">
               {resources.map((resource) => {
                 const hasResource = role.resources[resource] > 0;
+                const amount = Math.min(contributeAmount[resource], role.resources[resource]);
                 return (
-                  <button
-                    key={resource}
-                    onClick={() => onContribute(zone, resource, 1)}
-                    disabled={!hasResource}
-                    className={`py-2 rounded-lg text-center transition-colors ${
-                      hasResource
-                        ? 'bg-emerald-900/50 hover:bg-emerald-800 active:scale-95 text-emerald-300'
-                        : 'bg-[#415A77]/20 text-[#415A77] cursor-not-allowed'
-                    }`}
-                  >
-                    <div className="text-lg">{RESOURCE_ICONS[resource]}</div>
-                    <div className="text-xs">+1</div>
-                  </button>
+                  <div key={resource} className="space-y-1">
+                    <button
+                      onClick={() => onContribute(zone, resource, amount)}
+                      disabled={!hasResource}
+                      className={`w-full py-2 rounded-lg text-center transition-colors ${
+                        hasResource
+                          ? 'bg-emerald-900/50 hover:bg-emerald-800 active:scale-95 text-emerald-300'
+                          : 'bg-[#415A77]/20 text-[#415A77] cursor-not-allowed'
+                      }`}
+                    >
+                      <div className="text-lg">{RESOURCE_ICONS[resource]}</div>
+                      <div className="text-xs">+{amount}</div>
+                    </button>
+                    {hasResource && (
+                      <div className="flex justify-center gap-1">
+                        <button
+                          onClick={() => setContributeAmount(prev => ({
+                            ...prev,
+                            [resource]: Math.max(1, prev[resource] - 1)
+                          }))}
+                          className="w-6 h-6 bg-[#415A77]/50 rounded text-xs"
+                        >-</button>
+                        <button
+                          onClick={() => setContributeAmount(prev => ({
+                            ...prev,
+                            [resource]: Math.min(role.resources[resource], prev[resource] + 1)
+                          }))}
+                          className="w-6 h-6 bg-[#415A77]/50 rounded text-xs"
+                        >+</button>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
           </div>
         )}
       </div>
+
+      {/* Zone Info with Upgrade Progress */}
+      {zoneData && (
+        <div className="bg-[#1B263B] rounded-xl p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[#778DA9] text-xs uppercase tracking-wide">
+              Зона: {ZONE_NAMES_RU[zone as keyof typeof ZONE_NAMES_RU]}
+            </h3>
+            <span className="bg-[#D4A017]/20 text-[#D4A017] text-xs px-2 py-1 rounded">
+              Уровень {zoneData.level}
+            </span>
+          </div>
+
+          {/* Zone Resources */}
+          <div className="grid grid-cols-4 gap-2 mb-3">
+            {resources.map((resource) => (
+              <div key={resource} className="text-center">
+                <div className="text-lg">{RESOURCE_ICONS[resource]}</div>
+                <div className="text-[#E0E1DD] font-mono text-sm">
+                  {zoneData.resources[resource]}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Upgrade Cost */}
+          {upgradeCost ? (
+            <div className="pt-3 border-t border-[#415A77]/30">
+              <div className="text-[#778DA9] text-xs mb-2">
+                Для улучшения до уровня {zoneData.level + 1}:
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {resources.map((resource) => {
+                  const current = zoneData.resources[resource];
+                  const needed = upgradeCost[resource];
+                  const hasEnough = current >= needed;
+                  return (
+                    <div key={resource} className="text-center">
+                      <div className="text-sm">{RESOURCE_ICONS[resource]}</div>
+                      <div className={`font-mono text-xs ${hasEnough ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {current}/{needed}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {canUpgrade && (
+                <div className="mt-2 text-center text-emerald-400 text-xs">
+                  Достаточно ресурсов для улучшения!
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="pt-3 border-t border-[#415A77]/30 text-center text-emerald-400 text-xs">
+              Максимальный уровень достигнут
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Mission */}
       <div className="flex-1">
@@ -461,16 +557,6 @@ function RoleCardScreen({
           </h3>
           <p className="text-[#E0E1DD] leading-relaxed">
             {roleData.publicMission}
-          </p>
-        </div>
-
-        {/* Zone indicator */}
-        <div className="bg-[#1B263B] rounded-xl p-4 mb-4">
-          <h3 className="text-[#778DA9] text-xs uppercase tracking-wide mb-2">
-            Ваша зона
-          </h3>
-          <p className="text-[#E0E1DD] font-semibold">
-            {getZoneName(roleData.zone)}
           </p>
         </div>
       </div>
@@ -842,15 +928,3 @@ function FinaleScreen({ role, promiseText }: FinaleScreenProps) {
   );
 }
 
-// ============ HELPERS ============
-
-function getZoneName(zone: string): string {
-  const names: Record<string, string> = {
-    center: 'Центр',
-    residential: 'Жилой квартал',
-    industrial: 'Промзона',
-    green: 'Зелёный пояс',
-    unknown: 'Неизведанная территория',
-  };
-  return names[zone] || zone;
-}
