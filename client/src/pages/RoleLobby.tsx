@@ -13,8 +13,11 @@ export function RoleLobby() {
   const [playerName, setPlayerName] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
-  const [claimedToken, setClaimedToken] = useState<string | null>(null);
-
+  const [claimedToken, setClaimedToken] = useState<string | null>(() => {
+    // Restore from localStorage if page was refreshed
+    return localStorage.getItem('horizon_claimed_token');
+  });
+  const [isClaiming, setIsClaiming] = useState(false);
 
   const activeRoles = useMemo(() => {
     if (!state) return [];
@@ -40,26 +43,40 @@ export function RoleLobby() {
   }, [state, claimedToken]);
 
   const handleClaim = () => {
+    if (isClaiming) return; // Block double-clicks
+
     if (!selectedRoleId || !playerName.trim()) {
       setClaimError('Введите имя и выберите роль');
       return;
     }
 
+    // Find the token before claiming
+    const role = state?.roles.find((r) => r.id === selectedRoleId);
+    if (!role) {
+      setClaimError('Роль не найдена');
+      return;
+    }
+
+    // Check if role is still available
+    if (role.claimedBy !== null) {
+      setClaimError('Эта роль уже занята. Выберите другую.');
+      setSelectedRoleId(null);
+      return;
+    }
+
+    setIsClaiming(true);
     setClaimError(null);
     claimRole(selectedRoleId, playerName.trim());
 
-    // Find the token for this role
-    const role = state?.roles.find((r) => r.id === selectedRoleId);
-    if (role) {
-      // The token will be returned via socket event
-      // For now, we'll use the role's existing token
-      setTimeout(() => {
-        const updatedRole = state?.roles.find((r) => r.id === selectedRoleId);
-        if (updatedRole?.claimedBy === playerName.trim()) {
-          setClaimedToken(updatedRole.token);
-        }
-      }, 500);
-    }
+    // Save token and redirect immediately
+    const token = role.token;
+    localStorage.setItem('horizon_claimed_token', token);
+    setClaimedToken(token);
+
+    // Redirect to game after a short delay to let the claim propagate
+    setTimeout(() => {
+      navigate(`/play/${token}`);
+    }, 500);
   };
 
   const handleEnterGame = () => {
@@ -255,9 +272,14 @@ export function RoleLobby() {
             <div className="max-w-4xl mx-auto">
               <button
                 onClick={handleClaim}
-                className="w-full bg-gradient-to-r from-[#D4A017] to-[#B8860B] text-[#0D1B2A] font-bold py-4 rounded-xl hover:opacity-90 transition-opacity text-lg"
+                disabled={isClaiming}
+                className={`w-full font-bold py-4 rounded-xl transition-opacity text-lg ${
+                  isClaiming
+                    ? 'bg-gray-600 text-gray-300 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-[#D4A017] to-[#B8860B] text-[#0D1B2A] hover:opacity-90'
+                }`}
               >
-                Выбрать роль
+                {isClaiming ? 'Подождите...' : 'Выбрать роль'}
               </button>
             </div>
           </div>
