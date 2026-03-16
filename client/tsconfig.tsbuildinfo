@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/data/zone-upgrade-costs.ts","./src/hooks/usegamestate.ts","./src/hooks/usesocket.ts","./src/pages/admindashboard.tsx","./src/pages/mapprojection.tsx","./src/pages/mobileplayer.tsx","./src/pages/qrcodespage.tsx","./src/types/game-data.ts","./src/types/game-state.ts"],"version":"5.9.3"}

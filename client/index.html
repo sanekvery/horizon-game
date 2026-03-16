@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0D1B2A" />
+    <title>Горизонт — Интерактивная игра</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      body { margin: 0; background: #0D1B2A; }
+      #loading-fallback {
+        position: fixed; inset: 0;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        background: #0D1B2A; color: #E0E1DD;
+        font-family: Inter, sans-serif;
+      }
+      #loading-fallback .spinner {
+        width: 40px; height: 40px;
+        border: 3px solid #415A77;
+        border-top-color: #D4A017;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 16px;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #error-display {
+        position: fixed; inset: 0;
+        display: none; flex-direction: column;
+        align-items: center; justify-content: center;
+        background: #0D1B2A; color: #E0E1DD;
+        font-family: Inter, sans-serif; padding: 20px;
+        text-align: center;
+      }
+      #error-display.show { display: flex; }
+      #error-display pre {
+        background: #1B263B; padding: 12px;
+        border-radius: 8px; max-width: 90%;
+        overflow-x: auto; font-size: 12px;
+        color: #ff6b6b; margin-top: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading-fallback">
+      <div class="spinner"></div>
+      <div id="loading-text">Загрузка игры...</div>
+      <button id="retry-btn" onclick="location.reload()" style="display:none; margin-top: 20px; padding: 12px 24px; background: #D4A017; color: #0D1B2A; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;">
+        🔄 Нажмите чтобы войти
+      </button>
+      <script>
+        // Если через 3 секунды React не загрузился — показать кнопку
+        setTimeout(function() {
+          if (document.getElementById('loading-fallback').style.display !== 'none') {
+            document.getElementById('loading-text').textContent = 'Нажмите кнопку для входа';
+            document.getElementById('retry-btn').style.display = 'block';
+          }
+        }, 3000);
+      </script>
+    </div>
+    <div id="error-display">
+      <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+      <div style="font-size: 18px; font-weight: bold; color: #ff6b6b;">Ошибка загрузки</div>
+      <pre id="error-message"></pre>
+      <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 20px; background: #415A77; color: white; border: none; border-radius: 8px; cursor: pointer;">
+        Перезагрузить
+      </button>
+    </div>
+    <div id="root"></div>
+    <script>
+      window.onerror = function(msg, url, line, col, error) {
+        document.getElementById('loading-fallback').style.display = 'none';
+        document.getElementById('error-display').classList.add('show');
+        document.getElementById('error-message').textContent = msg + '\n' + (url || '') + ':' + line;
+        return true;
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        document.getElementById('loading-fallback').style.display = 'none';
+        document.getElementById('error-display').classList.add('show');
+        document.getElementById('error-message').textContent = 'Promise rejected: ' + (e.reason?.message || e.reason || 'Unknown');
+      });
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

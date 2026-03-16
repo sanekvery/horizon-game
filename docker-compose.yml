@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  horizon:
+    build: .
+    container_name: horizon-game
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-horizon2024}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
