@@ -306,7 +306,7 @@ export function MobilePlayer() {
           <OnboardingScreen onComplete={handleCompleteOnboarding} />
         )}
 
-        {currentScreen === 'role-intro' && (
+        {currentScreen === 'role-intro' && currentRole && roleData && (
           <RoleIntroScreen
             role={currentRole}
             roleData={roleData}
@@ -314,7 +314,7 @@ export function MobilePlayer() {
           />
         )}
 
-        {currentScreen === 'role-card' && state && (
+        {currentScreen === 'role-card' && state && currentRole && roleData && (
           <RoleCardScreen
             role={currentRole}
             roleData={roleData}
@@ -330,7 +330,7 @@ export function MobilePlayer() {
         )}
 
         {/* Role Info Modal */}
-        {showRoleModal && (
+        {showRoleModal && currentRole && roleData && (
           <RoleInfoModal
             role={currentRole}
             roleData={roleData}
