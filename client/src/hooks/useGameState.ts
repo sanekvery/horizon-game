@@ -41,6 +41,8 @@ interface UseGameStateReturn {
   unclaimRole: (roleId: number) => void;
 }
 
+const ADMIN_PASSWORD_KEY = 'horizon_admin_password';
+
 export function useGameState(): UseGameStateReturn {
   const { isConnected, emit, on, off } = useSocket();
   const [state, setState] = useState<GameState | null>(null);
@@ -60,6 +62,8 @@ export function useGameState(): UseGameStateReturn {
 
     on<{ message: string }>('admin:error', ({ message }) => {
       setError(message);
+      // Clear saved password on auth error
+      sessionStorage.removeItem(ADMIN_PASSWORD_KEY);
     });
 
     on('admin:authenticated', () => {
@@ -75,12 +79,18 @@ export function useGameState(): UseGameStateReturn {
     };
   }, [on, off]);
 
-  // Запросить состояние при подключении (fix race condition)
+  // Запросить состояние при подключении и авто-авторизация админа
   useEffect(() => {
     if (isConnected) {
       emit('request:state');
+
+      // Auto-authenticate if password is saved
+      const savedPassword = sessionStorage.getItem(ADMIN_PASSWORD_KEY);
+      if (savedPassword && !isAdmin) {
+        emit('admin:auth', savedPassword);
+      }
     }
-  }, [isConnected, emit]);
+  }, [isConnected, emit, isAdmin]);
 
   // Player actions
   const joinAsPlayer = useCallback((token: string) => {
@@ -111,6 +121,8 @@ export function useGameState(): UseGameStateReturn {
 
   // Admin actions
   const authenticateAdmin = useCallback((password: string) => {
+    // Save password for auto-reconnect
+    sessionStorage.setItem(ADMIN_PASSWORD_KEY, password);
     emit('admin:auth', password);
   }, [emit]);
 
