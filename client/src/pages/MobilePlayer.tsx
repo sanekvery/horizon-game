@@ -3,13 +3,15 @@ import { useParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import rolesData from '../data/roles.json';
 import crisesData from '../data/crises.json';
-import type { Role, Vote, ResourceName, ZoneName, Zone } from '../types/game-state';
+import scenarioData from '../data/scenario.json';
+import type { Role, Vote, ResourceName, ZoneName, Zone, GameState } from '../types/game-state';
 import { RESOURCE_ICONS, ZONE_NAMES_RU } from '../types/game-state';
 import type { GameRole, Crisis } from '../types/game-data';
 import { getUpgradeCost, canAffordUpgrade } from '../data/zone-upgrade-costs';
 
 type Screen =
-  | 'welcome'
+  | 'onboarding'
+  | 'role-intro'
   | 'role-card'
   | 'voting'
   | 'crisis'
@@ -48,7 +50,13 @@ export function MobilePlayer() {
   const [promiseSealed, setPromiseSealed] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [screenTransition, setScreenTransition] = useState(false);
-  const [prevScreen, setPrevScreen] = useState<Screen>('welcome');
+  const [prevScreen, setPrevScreen] = useState<Screen>('onboarding');
+  const [hasSeenOnboarding, setHasSeenOnboarding] = useState(() => {
+    return localStorage.getItem('horizon_seen_onboarding') === 'true';
+  });
+  const [hasSeenRoleIntro, setHasSeenRoleIntro] = useState(() => {
+    return localStorage.getItem('horizon_seen_role_intro') === 'true';
+  });
 
   // Join game with token
   useEffect(() => {
@@ -78,7 +86,17 @@ export function MobilePlayer() {
 
   // Determine current screen based on game state
   const currentScreen = useMemo((): Screen => {
-    if (!state || !currentRole) return 'welcome';
+    if (!state || !currentRole) return 'onboarding';
+
+    // Show onboarding first if not seen
+    if (!hasSeenOnboarding) {
+      return 'onboarding';
+    }
+
+    // Show role intro if not seen
+    if (!hasSeenRoleIntro) {
+      return 'role-intro';
+    }
 
     // Check for active votes first
     const activeVote = state.votes.find((v) => v.status === 'active');
@@ -86,10 +104,10 @@ export function MobilePlayer() {
       return 'voting';
     }
 
-    // Screen based on act — ВСЕГДА показываем role-card чтобы игрок видел свою роль
+    // Screen based on act
     switch (state.currentAct) {
       case 1:
-        return 'role-card'; // Сразу показываем роль, не "ожидайте"
+        return 'role-card';
       case 2:
         return 'role-card';
       case 3:
@@ -113,7 +131,7 @@ export function MobilePlayer() {
       default:
         return 'role-card';
     }
-  }, [state, currentRole, votedFor, promiseSealed]);
+  }, [state, currentRole, votedFor, promiseSealed, hasSeenOnboarding, hasSeenRoleIntro]);
 
   // Handle screen transitions
   useEffect(() => {
@@ -140,6 +158,16 @@ export function MobilePlayer() {
   }, [roleData, state?.currentAct, state?.currentScene]);
 
   // Handlers
+  const handleCompleteOnboarding = () => {
+    localStorage.setItem('horizon_seen_onboarding', 'true');
+    setHasSeenOnboarding(true);
+  };
+
+  const handleCompleteRoleIntro = () => {
+    localStorage.setItem('horizon_seen_role_intro', 'true');
+    setHasSeenRoleIntro(true);
+  };
+
   const handleRevealSecret = () => {
     if (showSecretConfirm) {
       setSecretRevealed(true);
@@ -249,20 +277,29 @@ export function MobilePlayer() {
     <div className="min-h-screen bg-[#0D1B2A] text-[#E0E1DD] overflow-hidden">
       {/* Screen content with transition */}
       <div className={`transition-opacity duration-300 ${screenTransition ? 'opacity-0' : 'opacity-100'}`}>
-        {currentScreen === 'welcome' && (
-          <WelcomeScreen role={currentRole} roleData={roleData} />
+        {currentScreen === 'onboarding' && (
+          <OnboardingScreen onComplete={handleCompleteOnboarding} />
         )}
 
-        {currentScreen === 'role-card' && (
+        {currentScreen === 'role-intro' && (
+          <RoleIntroScreen
+            role={currentRole}
+            roleData={roleData}
+            onComplete={handleCompleteRoleIntro}
+          />
+        )}
+
+        {currentScreen === 'role-card' && state && (
           <RoleCardScreen
             role={currentRole}
             roleData={roleData}
+            gameState={state}
             secretRevealed={secretRevealed}
             showSecretConfirm={showSecretConfirm}
             onRevealSecret={handleRevealSecret}
             onCancelReveal={() => setShowSecretConfirm(false)}
             onContribute={contributeToZone}
-            zoneData={roleData.zone !== 'unknown' && state ? state.zones[roleData.zone as Exclude<ZoneName, 'unknown'>] : undefined}
+            zoneData={roleData.zone !== 'unknown' ? state.zones[roleData.zone as Exclude<ZoneName, 'unknown'>] : undefined}
           />
         )}
 
@@ -327,43 +364,203 @@ function ErrorScreen({ message }: { message: string }) {
   );
 }
 
-// SCREEN 1: Welcome
-interface WelcomeScreenProps {
-  role: Role;
-  roleData: GameRole;
+// SCREEN 1: Onboarding
+interface OnboardingScreenProps {
+  onComplete: () => void;
 }
 
-function WelcomeScreen({ role, roleData }: WelcomeScreenProps) {
+function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
+  const [step, setStep] = useState(0);
+
+  const steps = [
+    {
+      icon: '🌆',
+      title: 'Добро пожаловать в Проект Горизонт',
+      description: 'Вы — один из последних выживших. Вместе с другими вам предстоит построить новый город с нуля.',
+    },
+    {
+      icon: '🎭',
+      title: 'У вас есть роль',
+      description: 'Каждый участник получает профессию, миссию и секретную мотивацию. Играйте свою роль, но помните — у каждого есть что скрывать.',
+    },
+    {
+      icon: '🏗️',
+      title: 'Что вы будете делать',
+      description: 'Обсуждать, спорить, принимать решения. Распределять ресурсы между зонами города. Решать кризисы. И в конце — раскрыть правду.',
+    },
+    {
+      icon: '🤫',
+      title: 'Главное правило',
+      description: 'Никому не показывайте свой секрет до момента раскрытия. Играйте честно — это делает игру интересной для всех.',
+    },
+  ];
+
+  const currentStep = steps[step];
+  const isLast = step === steps.length - 1;
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center">
-      {/* Logo / Title */}
-      <div className="mb-8">
-        <div className="text-[#778DA9] text-sm uppercase tracking-widest mb-2">
-          Добро пожаловать в
-        </div>
-        <h1 className="text-3xl font-bold text-[#E0E1DD]">Проект Горизонт</h1>
+    <div className="min-h-screen flex flex-col p-6 bg-gradient-to-b from-[#1B263B] to-[#0D1B2A]">
+      {/* Progress dots */}
+      <div className="flex justify-center gap-2 py-4">
+        {steps.map((_, i) => (
+          <div
+            key={i}
+            className={`w-2 h-2 rounded-full transition-colors ${
+              i === step ? 'bg-[#D4A017]' : i < step ? 'bg-[#D4A017]/50' : 'bg-[#415A77]'
+            }`}
+          />
+        ))}
       </div>
 
-      {/* Role name */}
-      <div className="mb-8">
-        <div className="text-[#778DA9] text-sm mb-2">Вы —</div>
-        <h2 className="text-2xl font-bold text-[#D4A017] mb-2">{role.name}</h2>
-        <div className="text-[#778DA9] italic">{roleData.archetype}</div>
+      {/* Content */}
+      <div className="flex-1 flex flex-col items-center justify-center text-center">
+        <div className="text-6xl mb-6">{currentStep.icon}</div>
+        <h1 className="text-2xl font-bold text-[#E0E1DD] mb-4">{currentStep.title}</h1>
+        <p className="text-[#778DA9] text-lg leading-relaxed max-w-md">
+          {currentStep.description}
+        </p>
       </div>
 
-      {/* Waiting indicator */}
-      <div className="flex items-center gap-3 text-[#778DA9]">
-        <div className="w-3 h-3 bg-[#D4A017] rounded-full animate-pulse" />
-        <span>Ожидайте начала...</span>
+      {/* Navigation */}
+      <div className="flex gap-3 pt-6">
+        {step > 0 && (
+          <button
+            onClick={() => setStep(step - 1)}
+            className="flex-1 py-4 bg-[#415A77] hover:bg-[#778DA9] rounded-xl font-semibold transition-colors"
+          >
+            Назад
+          </button>
+        )}
+        <button
+          onClick={() => (isLast ? onComplete() : setStep(step + 1))}
+          className={`flex-1 py-4 rounded-xl font-semibold transition-colors ${
+            isLast
+              ? 'bg-[#D4A017] hover:bg-[#c4940f] text-[#0D1B2A]'
+              : 'bg-[#415A77] hover:bg-[#778DA9] text-[#E0E1DD]'
+          }`}
+        >
+          {isLast ? 'Начать' : 'Далее'}
+        </button>
       </div>
     </div>
   );
 }
 
-// SCREEN 2: Role Card
+// SCREEN 2: Role Introduction
+interface RoleIntroScreenProps {
+  role: Role;
+  roleData: GameRole;
+  onComplete: () => void;
+}
+
+function RoleIntroScreen({ role, roleData, onComplete }: RoleIntroScreenProps) {
+  const [activeTab, setActiveTab] = useState<'how' | 'moments' | 'relations'>('how');
+
+  return (
+    <div className="min-h-screen flex flex-col p-4 bg-gradient-to-b from-[#1B263B] to-[#0D1B2A]">
+      {/* Header */}
+      <div className="text-center py-6 border-b border-[#415A77]/30 mb-4">
+        <div className="text-[#778DA9] text-sm mb-2">Ваша роль</div>
+        <h1 className="text-2xl font-bold text-[#D4A017] mb-1">{role.name}</h1>
+        <p className="text-[#778DA9] italic">{roleData.archetype}</p>
+        <div className="mt-3 inline-flex items-center gap-2 text-xs bg-[#0D1B2A] px-3 py-1 rounded-full border border-[#415A77]/30">
+          <span className="text-[#778DA9]">Зона:</span>
+          <span className="text-[#E0E1DD] font-medium">{ZONE_NAMES_RU[roleData.zone as keyof typeof ZONE_NAMES_RU] || roleData.zone}</span>
+        </div>
+      </div>
+
+      {/* Public Mission */}
+      <div className="bg-gradient-to-r from-emerald-900/30 to-emerald-800/20 rounded-xl p-4 mb-4 border border-emerald-500/30">
+        <div className="flex items-center gap-2 text-emerald-400 text-xs uppercase tracking-wide mb-2">
+          <span>🎯</span>
+          <span>Ваша миссия</span>
+        </div>
+        <p className="text-[#E0E1DD] leading-relaxed">{roleData.publicMission}</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setActiveTab('how')}
+          className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'how' ? 'bg-[#D4A017] text-[#0D1B2A]' : 'bg-[#1B263B] text-[#778DA9]'
+          }`}
+        >
+          Как играть
+        </button>
+        <button
+          onClick={() => setActiveTab('moments')}
+          className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'moments' ? 'bg-[#D4A017] text-[#0D1B2A]' : 'bg-[#1B263B] text-[#778DA9]'
+          }`}
+        >
+          Ключевые моменты
+        </button>
+        <button
+          onClick={() => setActiveTab('relations')}
+          className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === 'relations' ? 'bg-[#D4A017] text-[#0D1B2A]' : 'bg-[#1B263B] text-[#778DA9]'
+          }`}
+        >
+          Отношения
+        </button>
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === 'how' && roleData.howToPlay && (
+          <div className="bg-[#1B263B] rounded-xl p-4">
+            <p className="text-[#E0E1DD] leading-relaxed">{roleData.howToPlay}</p>
+          </div>
+        )}
+
+        {activeTab === 'moments' && roleData.keyMoments && (
+          <div className="space-y-3">
+            {roleData.keyMoments.map((moment, i) => (
+              <div key={i} className="bg-[#1B263B] rounded-xl p-4 flex items-start gap-3">
+                <span className="text-[#D4A017] font-bold">{i + 1}</span>
+                <p className="text-[#E0E1DD]">{moment}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === 'relations' && roleData.relationships && (
+          <div className="bg-[#1B263B] rounded-xl p-4">
+            <p className="text-[#E0E1DD] leading-relaxed">{roleData.relationships}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Secret teaser */}
+      <div className="mt-4 bg-red-900/20 rounded-xl p-4 border border-red-500/30">
+        <div className="flex items-center gap-2 text-red-400 text-xs uppercase tracking-wide mb-2">
+          <span>🔒</span>
+          <span>Секретная мотивация</span>
+        </div>
+        <p className="text-[#778DA9] text-sm">
+          После начала игры вы сможете раскрыть свой секрет. Это информация только для вас.
+        </p>
+      </div>
+
+      {/* Continue button */}
+      <div className="pt-6">
+        <button
+          onClick={onComplete}
+          className="w-full py-4 bg-[#D4A017] hover:bg-[#c4940f] text-[#0D1B2A] font-bold rounded-xl transition-colors"
+        >
+          Я готов играть
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// SCREEN 3: Role Card (Main game screen)
 interface RoleCardScreenProps {
   role: Role;
   roleData: GameRole;
+  gameState: GameState;
   secretRevealed: boolean;
   showSecretConfirm: boolean;
   onRevealSecret: () => void;
@@ -379,9 +576,88 @@ const RESOURCE_NAMES: Record<ResourceName, string> = {
   knowledge: 'Знания',
 };
 
+// Get current task based on act/scene
+function getCurrentTask(act: number, scene: number, roleData: GameRole): { icon: string; title: string; description: string } {
+  // Act-based tasks
+  if (act === 1) {
+    if (scene <= 2) {
+      return {
+        icon: '📖',
+        title: 'Изучите свою роль',
+        description: 'Прочитайте миссию, раскройте секрет (только для себя!), запомните как вам играть.',
+      };
+    }
+    return {
+      icon: '👥',
+      title: 'Найдите свою команду',
+      description: `Ваша зона — ${ZONE_NAMES_RU[roleData.zone as keyof typeof ZONE_NAMES_RU] || roleData.zone}. Познакомьтесь с другими участниками вашей зоны.`,
+    };
+  }
+
+  if (act === 2) {
+    if (scene === 4) {
+      return {
+        icon: '🏗️',
+        title: 'Планируйте зону',
+        description: 'Обсудите с командой: какие здания строить? Какие ресурсы нужны? Что готовы отдать другим зонам?',
+      };
+    }
+    if (scene === 5) {
+      return {
+        icon: '🎤',
+        title: 'Презентация',
+        description: 'Слушайте презентации других зон. Задавайте вопросы. Ищите возможности для сотрудничества.',
+      };
+    }
+    return {
+      icon: '👁️',
+      title: 'Внимание!',
+      description: 'Разведчик делится важной информацией. Слушайте внимательно.',
+    };
+  }
+
+  if (act === 3) {
+    if (scene === 7) {
+      return {
+        icon: '📜',
+        title: 'Послание из прошлого',
+        description: 'Историк читает послание от предыдущего города. Это изменит ваше понимание ситуации.',
+      };
+    }
+    return {
+      icon: '⚡',
+      title: 'Кризис!',
+      description: 'Город столкнулся с проблемой. Обсуждайте, спорьте, ищите решение. Ресурсы ограничены.',
+    };
+  }
+
+  if (act === 4) {
+    return {
+      icon: '💫',
+      title: 'Время правды',
+      description: 'Приготовьтесь произнести свои слова раскрытия. Смотрите людям в глаза.',
+    };
+  }
+
+  if (act === 5) {
+    return {
+      icon: '🕯️',
+      title: 'Обещание',
+      description: 'Подумайте: что вы хотите изменить в своей реальной жизни после этой игры?',
+    };
+  }
+
+  return {
+    icon: '🎮',
+    title: 'Играйте свою роль',
+    description: roleData.howToPlay || roleData.publicMission,
+  };
+}
+
 function RoleCardScreen({
   role,
   roleData,
+  gameState,
   secretRevealed,
   showSecretConfirm,
   onRevealSecret,
@@ -390,6 +666,7 @@ function RoleCardScreen({
   zoneData,
 }: RoleCardScreenProps) {
   const [showContribute, setShowContribute] = useState(false);
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [contributeAmount, setContributeAmount] = useState<Record<ResourceName, number>>({
     energy: 1,
     materials: 1,
@@ -403,17 +680,71 @@ function RoleCardScreen({
   const upgradeCost = zoneData ? getUpgradeCost(zoneData.level) : null;
   const canUpgrade = upgradeCost && zoneData && canAffordUpgrade(zoneData.resources, upgradeCost);
 
+  // Get current scene info
+  const currentActData = scenarioData.acts.find((a) => a.id === gameState.currentAct);
+  const currentSceneData = scenarioData.acts
+    .flatMap((a) => a.scenes)
+    .find((s) => s.id === gameState.currentScene);
+  const currentTask = getCurrentTask(gameState.currentAct, gameState.currentScene, roleData);
+
   return (
-    <div className="min-h-screen flex flex-col p-4">
-      {/* Header */}
-      <div className="text-center py-4 border-b border-[#415A77]/30 mb-4">
-        <h1 className="text-xl font-bold text-[#D4A017]">{role.name}</h1>
-        <p className="text-[#778DA9] text-sm">{roleData.archetype}</p>
-        <div className="mt-2 inline-flex items-center gap-2 text-xs bg-[#1B263B] px-3 py-1 rounded-full">
-          <span className="text-[#778DA9]">Зона:</span>
-          <span className="text-[#E0E1DD] font-medium">{ZONE_NAMES_RU[zone as keyof typeof ZONE_NAMES_RU] || zone}</span>
+    <div className="min-h-screen flex flex-col p-4 pb-20">
+      {/* Game Phase Indicator */}
+      <div className="bg-gradient-to-r from-[#D4A017]/20 to-[#D4A017]/10 rounded-xl p-3 mb-4 border border-[#D4A017]/30">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[#D4A017] text-xs font-semibold uppercase tracking-wide">
+            Акт {gameState.currentAct}: {currentActData?.title || ''}
+          </div>
+          {gameState.timer.running && (
+            <div className="text-[#E0E1DD] font-mono text-sm bg-[#0D1B2A] px-2 py-1 rounded">
+              {Math.floor(gameState.timer.remainingSec / 60)}:{String(gameState.timer.remainingSec % 60).padStart(2, '0')}
+            </div>
+          )}
+        </div>
+        <div className="text-[#E0E1DD] text-sm">
+          {currentSceneData?.title || 'Сцена ' + gameState.currentScene}
         </div>
       </div>
+
+      {/* Current Task */}
+      <div className="bg-emerald-900/30 rounded-xl p-4 mb-4 border border-emerald-500/30">
+        <div className="flex items-start gap-3">
+          <span className="text-2xl">{currentTask.icon}</span>
+          <div>
+            <div className="text-emerald-400 font-semibold mb-1">{currentTask.title}</div>
+            <div className="text-[#E0E1DD] text-sm leading-relaxed">{currentTask.description}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Compact Header */}
+      <div className="flex items-center justify-between bg-[#1B263B] rounded-xl p-3 mb-4">
+        <div>
+          <h1 className="text-lg font-bold text-[#D4A017]">{role.name}</h1>
+          <p className="text-[#778DA9] text-xs">{roleData.archetype} • {ZONE_NAMES_RU[zone as keyof typeof ZONE_NAMES_RU] || zone}</p>
+        </div>
+        <button
+          onClick={() => setShowHowToPlay(!showHowToPlay)}
+          className="text-[#778DA9] hover:text-[#E0E1DD] p-2"
+          title="Как играть"
+        >
+          <span className="text-xl">❓</span>
+        </button>
+      </div>
+
+      {/* How to Play (expandable) */}
+      {showHowToPlay && (
+        <div className="bg-[#1B263B] rounded-xl p-4 mb-4 border border-[#415A77]/30">
+          <div className="text-[#D4A017] text-xs uppercase tracking-wide mb-2">Как играть вашу роль</div>
+          <p className="text-[#E0E1DD] text-sm leading-relaxed mb-3">{roleData.howToPlay}</p>
+          {roleData.relationships && (
+            <>
+              <div className="text-[#778DA9] text-xs uppercase tracking-wide mb-1 mt-3">Отношения</div>
+              <p className="text-[#778DA9] text-sm">{roleData.relationships}</p>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Personal Resources */}
       <div className="bg-gradient-to-r from-[#1B263B] to-[#0D1B2A] border border-[#D4A017]/30 rounded-xl p-4 mb-4">

@@ -8,6 +8,9 @@ export interface GameRole {
   readonly publicMission: string;
   readonly secretMotivation: string;
   readonly revealLine: string;
+  readonly howToPlay?: string;
+  readonly keyMoments?: string[];
+  readonly relationships?: string;
 }
 
 export interface Crisis {
@@ -24,6 +27,10 @@ export interface Scene {
   readonly title: string;
   readonly duration: number;
   readonly description: string;
+  readonly facilitatorScript?: string;
+  readonly objectives?: string[];
+  readonly tips?: string[];
+  readonly sampleText?: string;
 }
 
 export interface Act {
