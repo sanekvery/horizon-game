@@ -57,6 +57,7 @@ export function MobilePlayer() {
   const [hasSeenRoleIntro, setHasSeenRoleIntro] = useState(() => {
     return localStorage.getItem('horizon_seen_role_intro') === 'true';
   });
+  const [showRoleModal, setShowRoleModal] = useState(false);
 
   // Join game with token
   useEffect(() => {
@@ -300,6 +301,16 @@ export function MobilePlayer() {
             onCancelReveal={() => setShowSecretConfirm(false)}
             onContribute={contributeToZone}
             zoneData={roleData.zone !== 'unknown' ? state.zones[roleData.zone as Exclude<ZoneName, 'unknown'>] : undefined}
+            onShowRoleInfo={() => setShowRoleModal(true)}
+          />
+        )}
+
+        {/* Role Info Modal */}
+        {showRoleModal && (
+          <RoleInfoModal
+            role={currentRole}
+            roleData={roleData}
+            onClose={() => setShowRoleModal(false)}
           />
         )}
 
@@ -567,6 +578,7 @@ interface RoleCardScreenProps {
   onCancelReveal: () => void;
   onContribute: (zone: ZoneName, resource: ResourceName, amount: number) => void;
   zoneData?: Zone;
+  onShowRoleInfo: () => void;
 }
 
 const RESOURCE_NAMES: Record<ResourceName, string> = {
@@ -664,6 +676,7 @@ function RoleCardScreen({
   onCancelReveal,
   onContribute,
   zoneData,
+  onShowRoleInfo,
 }: RoleCardScreenProps) {
   const [showContribute, setShowContribute] = useState(false);
   const [showHowToPlay, setShowHowToPlay] = useState(false);
@@ -723,13 +736,22 @@ function RoleCardScreen({
           <h1 className="text-lg font-bold text-[#D4A017]">{role.name}</h1>
           <p className="text-[#778DA9] text-xs">{roleData.archetype} • {ZONE_NAMES_RU[zone as keyof typeof ZONE_NAMES_RU] || zone}</p>
         </div>
-        <button
-          onClick={() => setShowHowToPlay(!showHowToPlay)}
-          className="text-[#778DA9] hover:text-[#E0E1DD] p-2"
-          title="Как играть"
-        >
-          <span className="text-xl">❓</span>
-        </button>
+        <div className="flex gap-1">
+          <button
+            onClick={() => setShowHowToPlay(!showHowToPlay)}
+            className="text-[#778DA9] hover:text-[#E0E1DD] p-2"
+            title="Быстрая подсказка"
+          >
+            <span className="text-lg">💡</span>
+          </button>
+          <button
+            onClick={onShowRoleInfo}
+            className="text-[#778DA9] hover:text-[#E0E1DD] p-2"
+            title="Полная инструкция"
+          >
+            <span className="text-lg">📋</span>
+          </button>
+        </div>
       </div>
 
       {/* How to Play (expandable) */}
@@ -1254,6 +1276,267 @@ function FinaleScreen({ role, promiseText }: FinaleScreenProps) {
         <p className="text-[#415A77] text-sm mt-4">
           Ваше обещание останется в истории города Горизонт
         </p>
+      </div>
+    </div>
+  );
+}
+
+// Role Info Modal - Full role instructions
+interface RoleInfoModalProps {
+  role: Role;
+  roleData: GameRole;
+  onClose: () => void;
+}
+
+// Special content for specific roles
+const SPECIAL_ROLE_CONTENT: Record<number, { title: string; icon: string; content: string; note?: string }> = {
+  // Historian (id 18) - has the message from the past
+  18: {
+    title: 'Послание из прошлого',
+    icon: '📜',
+    content: `"Если вы читаете это — значит, мы не справились. Город Рассвет просуществовал три года. Мы думали, что главное — ресурсы. Мы ошибались. Город умер не от голода. Он умер от недоверия. Когда каждый решил, что его правда — единственная. Не повторяйте нашу ошибку."`,
+    note: 'Вы прочитаете это послание вслух в Акте 3, Сцена 7. До этого момента — только загадочные намёки.',
+  },
+  // Scout (id 11) - knows about the unknown zone
+  11: {
+    title: 'Ваше открытие',
+    icon: '🔭',
+    content: 'За пределами города вы нашли руины предыдущего поселения. Странные знаки на стенах. Следы поспешного бегства. И самое главное — вы видели КОГО-ТО в тумане. Кто-то ещё здесь.',
+    note: 'В Акте 2, Сцена 6 вы расскажете группе о своей находке. До этого — только намёки: "Я видел кое-что странное..."',
+  },
+  // Stranger (id 20) - the founder
+  20: {
+    title: 'Ваша тайна',
+    icon: '👁️',
+    content: 'Вы создали этот проект. Вы собрали этих людей. Вы наблюдаете за ними. Они думают что вы один из них — но вы тот, кто всё это организовал.',
+    note: 'В Акте 4, Сцена 11 вы раскроете себя. До этого — молчите и наблюдайте. Делайте заметки о людях.',
+  },
+  // Masha (id 19) - knows the truth about selection
+  19: {
+    title: 'Что вы знаете',
+    icon: '💔',
+    content: 'Эти люди думают, что они лучшие из лучших, отобранные для великой миссии. Но правда в том, что они здесь не потому что лучшие — а потому что единственные, кто согласился.',
+    note: 'В Акте 4, Сцена 10 вы скажете эту правду. Это должно быть неожиданно.',
+  },
+};
+
+// Resource explanation by zone
+const ZONE_RESOURCE_GUIDE: Record<string, { priority: string[]; description: string }> = {
+  center: {
+    priority: ['knowledge', 'energy'],
+    description: 'Центр управляет городом. Нужны знания для планирования и энергия для координации.',
+  },
+  residential: {
+    priority: ['food', 'materials'],
+    description: 'Жилая зона заботится о людях. Еда для питания, материалы для домов.',
+  },
+  industrial: {
+    priority: ['energy', 'materials'],
+    description: 'Промышленная зона производит. Энергия для станков, материалы для строительства.',
+  },
+  green: {
+    priority: ['food', 'knowledge'],
+    description: 'Зелёная зона выращивает. Еда — урожай, знания — агротехнологии.',
+  },
+};
+
+function RoleInfoModal({ role, roleData, onClose }: RoleInfoModalProps) {
+  const [activeTab, setActiveTab] = useState<'how' | 'moments' | 'relations' | 'special' | 'resources'>('how');
+  const specialContent = SPECIAL_ROLE_CONTENT[roleData.id];
+  const zoneGuide = ZONE_RESOURCE_GUIDE[roleData.zone];
+
+  return (
+    <div className="fixed inset-0 bg-black/90 z-50 overflow-y-auto">
+      <div className="min-h-screen p-4">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-xl font-bold text-[#D4A017]">{role.name}</h1>
+          <button
+            onClick={onClose}
+            className="w-10 h-10 bg-[#415A77] rounded-full flex items-center justify-center text-[#E0E1DD]"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Mission */}
+        <div className="bg-emerald-900/30 rounded-xl p-4 mb-4 border border-emerald-500/30">
+          <div className="flex items-center gap-2 text-emerald-400 text-xs uppercase tracking-wide mb-2">
+            <span>🎯</span>
+            <span>Ваша миссия</span>
+          </div>
+          <p className="text-[#E0E1DD]">{roleData.publicMission}</p>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 mb-4 overflow-x-auto pb-2">
+          <button
+            onClick={() => setActiveTab('how')}
+            className={`px-3 py-2 rounded-lg text-sm whitespace-nowrap ${
+              activeTab === 'how' ? 'bg-[#D4A017] text-[#0D1B2A]' : 'bg-[#1B263B] text-[#778DA9]'
+            }`}
+          >
+            Как играть
+          </button>
+          <button
+            onClick={() => setActiveTab('moments')}
+            className={`px-3 py-2 rounded-lg text-sm whitespace-nowrap ${
+              activeTab === 'moments' ? 'bg-[#D4A017] text-[#0D1B2A]' : 'bg-[#1B263B] text-[#778DA9]'
+            }`}
+          >
+            Ключевые моменты
+          </button>
+          <button
+            onClick={() => setActiveTab('relations')}
+            className={`px-3 py-2 rounded-lg text-sm whitespace-nowrap ${
+              activeTab === 'relations' ? 'bg-[#D4A017] text-[#0D1B2A]' : 'bg-[#1B263B] text-[#778DA9]'
+            }`}
+          >
+            Отношения
+          </button>
+          {specialContent && (
+            <button
+              onClick={() => setActiveTab('special')}
+              className={`px-3 py-2 rounded-lg text-sm whitespace-nowrap ${
+                activeTab === 'special' ? 'bg-purple-600 text-white' : 'bg-purple-900/30 text-purple-300'
+              }`}
+            >
+              {specialContent.icon} Особое
+            </button>
+          )}
+          <button
+            onClick={() => setActiveTab('resources')}
+            className={`px-3 py-2 rounded-lg text-sm whitespace-nowrap ${
+              activeTab === 'resources' ? 'bg-[#D4A017] text-[#0D1B2A]' : 'bg-[#1B263B] text-[#778DA9]'
+            }`}
+          >
+            Ресурсы
+          </button>
+        </div>
+
+        {/* Tab content */}
+        <div className="space-y-4">
+          {activeTab === 'how' && (
+            <div className="bg-[#1B263B] rounded-xl p-4">
+              <p className="text-[#E0E1DD] leading-relaxed">{roleData.howToPlay || 'Играйте свою роль согласно миссии.'}</p>
+            </div>
+          )}
+
+          {activeTab === 'moments' && (
+            <div className="space-y-3">
+              {roleData.keyMoments?.map((moment, i) => (
+                <div key={i} className="bg-[#1B263B] rounded-xl p-4 flex items-start gap-3">
+                  <span className="text-[#D4A017] font-bold text-lg">{i + 1}</span>
+                  <p className="text-[#E0E1DD]">{moment}</p>
+                </div>
+              )) || (
+                <div className="bg-[#1B263B] rounded-xl p-4 text-[#778DA9]">
+                  Следуйте за ходом игры и реагируйте на события.
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'relations' && (
+            <div className="bg-[#1B263B] rounded-xl p-4">
+              <p className="text-[#E0E1DD] leading-relaxed">{roleData.relationships || 'Взаимодействуйте со всеми участниками.'}</p>
+            </div>
+          )}
+
+          {activeTab === 'special' && specialContent && (
+            <div className="bg-purple-900/30 rounded-xl p-4 border border-purple-500/30">
+              <div className="flex items-center gap-2 text-purple-300 text-sm uppercase tracking-wide mb-3">
+                <span>{specialContent.icon}</span>
+                <span>{specialContent.title}</span>
+              </div>
+              <p className="text-[#E0E1DD] leading-relaxed mb-4 whitespace-pre-line">
+                {specialContent.content}
+              </p>
+              {specialContent.note && (
+                <div className="bg-[#0D1B2A] rounded-lg p-3 border border-purple-500/20">
+                  <div className="text-amber-400 text-xs uppercase mb-1">Важно</div>
+                  <p className="text-[#778DA9] text-sm">{specialContent.note}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'resources' && (
+            <div className="space-y-4">
+              {/* Zone-specific guide */}
+              {zoneGuide && (
+                <div className="bg-[#1B263B] rounded-xl p-4">
+                  <div className="text-[#D4A017] text-sm font-semibold mb-2">
+                    Ваша зона: {ZONE_NAMES_RU[roleData.zone as keyof typeof ZONE_NAMES_RU]}
+                  </div>
+                  <p className="text-[#E0E1DD] mb-3">{zoneGuide.description}</p>
+                  <div className="text-[#778DA9] text-sm">
+                    Приоритетные ресурсы: {zoneGuide.priority.map(r => RESOURCE_ICONS[r as ResourceName]).join(' ')}
+                  </div>
+                </div>
+              )}
+
+              {/* General resource guide */}
+              <div className="bg-[#1B263B] rounded-xl p-4">
+                <div className="text-[#778DA9] text-sm uppercase tracking-wide mb-3">Как работают ресурсы</div>
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl">{RESOURCE_ICONS.energy}</span>
+                    <div>
+                      <div className="text-[#E0E1DD] font-medium">Энергия</div>
+                      <div className="text-[#778DA9]">Питание, освещение, производство. Нужна всем зонам.</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl">{RESOURCE_ICONS.materials}</span>
+                    <div>
+                      <div className="text-[#E0E1DD] font-medium">Материалы</div>
+                      <div className="text-[#778DA9]">Строительство, ремонт, инфраструктура.</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl">{RESOURCE_ICONS.food}</span>
+                    <div>
+                      <div className="text-[#E0E1DD] font-medium">Еда</div>
+                      <div className="text-[#778DA9]">Питание жителей, запасы, медицина.</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl">{RESOURCE_ICONS.knowledge}</span>
+                    <div>
+                      <div className="text-[#E0E1DD] font-medium">Знания</div>
+                      <div className="text-[#778DA9]">Образование, технологии, планирование.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* How to contribute */}
+              <div className="bg-emerald-900/20 rounded-xl p-4 border border-emerald-500/30">
+                <div className="text-emerald-400 text-sm font-semibold mb-2">Как вносить ресурсы</div>
+                <ol className="text-[#E0E1DD] text-sm space-y-2">
+                  <li>1. На главном экране найдите "Мои ресурсы"</li>
+                  <li>2. Нажмите "Внести в зону"</li>
+                  <li>3. Выберите количество (+ и -)</li>
+                  <li>4. Нажмите на иконку ресурса</li>
+                </ol>
+                <p className="text-[#778DA9] text-xs mt-3">
+                  Ресурсы идут в пул вашей зоны. Когда накопится достаточно — зона улучшится.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Close button at bottom */}
+        <div className="mt-6 pb-4">
+          <button
+            onClick={onClose}
+            className="w-full py-4 bg-[#415A77] hover:bg-[#778DA9] rounded-xl font-semibold transition-colors"
+          >
+            Вернуться в игру
+          </button>
+        </div>
       </div>
     </div>
   );
