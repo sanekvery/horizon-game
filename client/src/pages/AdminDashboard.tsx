@@ -550,6 +550,11 @@ function ScenarioPage({ state, gameState }: PageProps) {
                 </div>
               </div>
 
+              {/* Facilitator guidance - expanded for active scene */}
+              {isActive && (
+                <FacilitatorGuide scene={scene} />
+              )}
+
               {/* Special event buttons */}
               <SpecialEventButtons
                 scene={scene}
@@ -560,6 +565,96 @@ function ScenarioPage({ state, gameState }: PageProps) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Facilitator guidance component
+interface SceneData {
+  id: number;
+  title: string;
+  duration: number;
+  description: string;
+  facilitatorScript?: string;
+  objectives?: string[];
+  tips?: string[];
+  sampleText?: string;
+}
+
+function FacilitatorGuide({ scene }: { scene: SceneData }) {
+  const [isScriptExpanded, setIsScriptExpanded] = useState(true);
+
+  return (
+    <div className="mt-4 space-y-4">
+      {/* What to say - main script */}
+      {scene.facilitatorScript && (
+        <div className="bg-gradient-to-r from-emerald-900/30 to-emerald-800/20 rounded-lg p-4 border border-emerald-500/30">
+          <button
+            onClick={() => setIsScriptExpanded(!isScriptExpanded)}
+            className="flex items-center justify-between w-full text-left"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">🎤</span>
+              <span className="text-emerald-400 font-semibold">Что сказать</span>
+            </div>
+            <span className="text-emerald-400">{isScriptExpanded ? '▼' : '▶'}</span>
+          </button>
+          {isScriptExpanded && (
+            <div className="mt-3 text-[#E0E1DD] text-lg leading-relaxed whitespace-pre-line border-l-4 border-emerald-500/50 pl-4">
+              {scene.facilitatorScript}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Objectives - what to achieve */}
+      {scene.objectives && scene.objectives.length > 0 && (
+        <div className="bg-[#0D1B2A] rounded-lg p-4 border border-[#415A77]/30">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">🎯</span>
+            <span className="text-[#D4A017] font-semibold">Цели сцены</span>
+          </div>
+          <ul className="space-y-2">
+            {scene.objectives.map((obj, i) => (
+              <li key={i} className="flex items-start gap-2 text-[#E0E1DD]">
+                <span className="text-[#D4A017] mt-1">•</span>
+                <span>{obj}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Tips - what to pay attention to */}
+      {scene.tips && scene.tips.length > 0 && (
+        <div className="bg-amber-900/20 rounded-lg p-4 border border-amber-500/30">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">💡</span>
+            <span className="text-amber-400 font-semibold">На что обратить внимание</span>
+          </div>
+          <ul className="space-y-2">
+            {scene.tips.map((tip, i) => (
+              <li key={i} className="flex items-start gap-2 text-[#E0E1DD]">
+                <span className="text-amber-400 mt-1">→</span>
+                <span>{tip}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Sample text - if needed */}
+      {scene.sampleText && (
+        <div className="bg-indigo-900/20 rounded-lg p-4 border border-indigo-500/30">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">📜</span>
+            <span className="text-indigo-400 font-semibold">Пример текста</span>
+          </div>
+          <div className="text-[#E0E1DD] italic whitespace-pre-line">
+            "{scene.sampleText}"
+          </div>
+        </div>
+      )}
     </div>
   );
 }
