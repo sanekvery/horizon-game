@@ -4,9 +4,10 @@ import { useGameState } from '../hooks/useGameState';
 import rolesData from '../data/roles.json';
 import crisesData from '../data/crises.json';
 import scenarioData from '../data/scenario.json';
+import eventsData from '../data/events.json';
 import type { Role, Vote, ResourceName, ZoneName, Zone, GameState } from '../types/game-state';
 import { RESOURCE_ICONS, ZONE_NAMES_RU } from '../types/game-state';
-import type { GameRole, Crisis } from '../types/game-data';
+import type { GameRole, Crisis, GameEvent } from '../types/game-data';
 import { getUpgradeCost, canAffordUpgrade } from '../data/zone-upgrade-costs';
 
 type Screen =
@@ -274,10 +275,33 @@ export function MobilePlayer() {
     );
   }
 
+  // Get active event for player notification
+  const activeEventData = useMemo(() => {
+    if (!state?.activeEvent) return null;
+    return (eventsData as GameEvent[]).find(e => e.id === state.activeEvent?.eventId) || null;
+  }, [state?.activeEvent]);
+
   return (
     <div className="min-h-screen bg-[#0D1B2A] text-[#E0E1DD] overflow-hidden">
+      {/* Event Banner */}
+      {activeEventData && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-amber-900/95 to-amber-800/95 border-b border-amber-500/50 p-4 animate-pulse shadow-lg">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl">
+              {activeEventData.type === 'resource_gain' ? '📈' :
+               activeEventData.type === 'resource_loss' ? '📉' :
+               activeEventData.type === 'dilemma' ? '⚖️' : '📖'}
+            </span>
+            <div className="flex-1">
+              <div className="text-amber-200 font-bold text-lg">{activeEventData.title}</div>
+              <div className="text-amber-100 text-sm">{activeEventData.playerMessage}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Screen content with transition */}
-      <div className={`transition-opacity duration-300 ${screenTransition ? 'opacity-0' : 'opacity-100'}`}>
+      <div className={`transition-opacity duration-300 ${screenTransition ? 'opacity-0' : 'opacity-100'} ${activeEventData ? 'pt-24' : ''}`}>
         {currentScreen === 'onboarding' && (
           <OnboardingScreen onComplete={handleCompleteOnboarding} />
         )}

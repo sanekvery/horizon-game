@@ -39,6 +39,14 @@ interface UseGameStateReturn {
   finishGame: () => void;
   setGamePhase: (phase: GamePhase) => void;
   unclaimRole: (roleId: number) => void;
+
+  // Event system
+  updateEventSettings: (settings: { enabled?: boolean; probability?: number; enabledEventIds?: number[] }) => void;
+  triggerEvent: (eventId: number) => void;
+  triggerDilemmaEvent: (eventId: number) => void;
+  dismissEvent: () => void;
+  applyEventEffect: (resource: ResourceName | 'all', amount: number, zone: ZoneName | 'all') => void;
+  recordEventChoice: (eventId: number, choice: string) => void;
 }
 
 const ADMIN_PASSWORD_KEY = 'horizon_admin_password';
@@ -219,6 +227,40 @@ export function useGameState(): UseGameStateReturn {
     emit('admin:unclaim-role', roleId);
   }, [emit]);
 
+  // Event system
+  const updateEventSettings = useCallback(
+    (settings: { enabled?: boolean; probability?: number; enabledEventIds?: number[] }) => {
+      emit('admin:update-event-settings', settings);
+    },
+    [emit]
+  );
+
+  const triggerEvent = useCallback((eventId: number) => {
+    emit('admin:trigger-event', eventId);
+  }, [emit]);
+
+  const triggerDilemmaEvent = useCallback((eventId: number) => {
+    emit('admin:trigger-dilemma-event', eventId);
+  }, [emit]);
+
+  const dismissEvent = useCallback(() => {
+    emit('admin:dismiss-event');
+  }, [emit]);
+
+  const applyEventEffect = useCallback(
+    (resource: ResourceName | 'all', amount: number, zone: ZoneName | 'all') => {
+      emit('admin:apply-event-effect', { resource, amount, zone });
+    },
+    [emit]
+  );
+
+  const recordEventChoice = useCallback(
+    (eventId: number, choice: string) => {
+      emit('admin:record-event-choice', { eventId, choice });
+    },
+    [emit]
+  );
+
   return {
     state,
     isConnected,
@@ -252,5 +294,11 @@ export function useGameState(): UseGameStateReturn {
     finishGame,
     setGamePhase,
     unclaimRole,
+    updateEventSettings,
+    triggerEvent,
+    triggerDilemmaEvent,
+    dismissEvent,
+    applyEventEffect,
+    recordEventChoice,
   };
 }

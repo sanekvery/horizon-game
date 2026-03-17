@@ -341,6 +341,71 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
       }
     );
 
+    // ============ EVENT SYSTEM ============
+
+    // Admin: update event settings
+    socket.on(
+      'admin:update-event-settings',
+      (settings: {
+        enabled?: boolean;
+        probability?: number;
+        enabledEventIds?: number[];
+      }) => {
+        if (!data.isAdmin) return;
+        gameService.updateEventSettings(settings);
+        broadcastState();
+      }
+    );
+
+    // Admin: trigger event
+    socket.on('admin:trigger-event', (eventId: number) => {
+      if (!data.isAdmin) return;
+      gameService.triggerEvent(eventId);
+      broadcastState();
+    });
+
+    // Admin: trigger dilemma event
+    socket.on('admin:trigger-dilemma-event', (eventId: number) => {
+      if (!data.isAdmin) return;
+      gameService.triggerDilemmaEvent(eventId);
+      broadcastState();
+    });
+
+    // Admin: dismiss active event
+    socket.on('admin:dismiss-event', () => {
+      if (!data.isAdmin) return;
+      gameService.dismissEvent();
+      broadcastState();
+    });
+
+    // Admin: apply event effect
+    socket.on(
+      'admin:apply-event-effect',
+      ({
+        resource,
+        amount,
+        zone,
+      }: {
+        resource: ResourceName | 'all';
+        amount: number;
+        zone: ZoneName | 'all';
+      }) => {
+        if (!data.isAdmin) return;
+        gameService.applyEventEffect(resource, amount, zone);
+        broadcastState();
+      }
+    );
+
+    // Admin: record dilemma choice
+    socket.on(
+      'admin:record-event-choice',
+      ({ eventId, choice }: { eventId: number; choice: string }) => {
+        if (!data.isAdmin) return;
+        gameService.recordEventChoice(eventId, choice);
+        broadcastState();
+      }
+    );
+
     // Disconnect
     socket.on('disconnect', () => {
       console.log(`Client disconnected: ${socket.id}`);

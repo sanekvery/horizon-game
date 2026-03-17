@@ -516,6 +516,7 @@ export class GameService {
       difficulty: config.difficulty,
       distributionMode: config.distributionMode,
       gamePhase: 'distribution',
+      eventSettings: state.settings.eventSettings,
     };
 
     const updatedState: GameState = {
@@ -649,7 +650,7 @@ export class GameService {
 
     const updatedSettings: GameSettings = {
       ...state.settings,
-      gamePhase: 'playing',
+      gamePhase: 'playing' as GamePhase,
     };
 
     const updatedState: GameState = {
@@ -704,5 +705,206 @@ export class GameService {
     const state = this.getState();
     if (!state) return null;
     return state.sessionId;
+  }
+
+  // ============ EVENT SYSTEM ============
+
+  /**
+   * Обновить настройки событий.
+   */
+  updateEventSettings(settings: {
+    enabled?: boolean;
+    probability?: number;
+    enabledEventIds?: number[];
+  }): GameState | null {
+    const state = this.getState();
+    if (!state) return null;
+
+    const updatedSettings: GameSettings = {
+      ...state.settings,
+      eventSettings: {
+        ...state.settings.eventSettings,
+        ...(settings.enabled !== undefined && { enabled: settings.enabled }),
+        ...(settings.probability !== undefined && { probability: settings.probability }),
+        ...(settings.enabledEventIds !== undefined && { enabledEventIds: settings.enabledEventIds }),
+      },
+    };
+
+    const updatedState: GameState = { ...state, settings: updatedSettings };
+    this.repository.save(updatedState);
+    return updatedState;
+  }
+
+  /**
+   * Запустить событие (показать игрокам).
+   */
+  triggerEvent(eventId: number): GameState | null {
+    const state = this.getState();
+    if (!state) return null;
+
+    // Проверить что событие ещё не было запущено
+    if (state.triggeredEvents.some((e) => e.eventId === eventId)) {
+      return null; // Событие уже было
+    }
+
+    const updatedState: GameState = {
+      ...state,
+      activeEvent: {
+        eventId,
+        showingToPlayers: true,
+        awaitingChoice: false, // Будет true для dilemma событий
+      },
+      triggeredEvents: [
+        ...state.triggeredEvents,
+        {
+          eventId,
+          triggeredAt: new Date().toISOString(),
+          actWhenTriggered: state.currentAct,
+          sceneWhenTriggered: state.currentScene,
+        },
+      ],
+    };
+
+    this.repository.save(updatedState);
+    return updatedState;
+  }
+
+  /**
+   * Запустить событие с выбором (dilemma).
+   */
+  triggerDilemmaEvent(eventId: number): GameState | null {
+    const state = this.getState();
+    if (!state) return null;
+
+    if (state.triggeredEvents.some((e) => e.eventId === eventId)) {
+      return null;
+    }
+
+    const updatedState: GameState = {
+      ...state,
+      activeEvent: {
+        eventId,
+        showingToPlayers: true,
+        awaitingChoice: true,
+      },
+      triggeredEvents: [
+        ...state.triggeredEvents,
+        {
+          eventId,
+          triggeredAt: new Date().toISOString(),
+          actWhenTriggered: state.currentAct,
+          sceneWhenTriggered: state.currentScene,
+        },
+      ],
+    };
+
+    this.repository.save(updatedState);
+    return updatedState;
+  }
+
+  /**
+   * Скрыть активное событие.
+   */
+  dismissEvent(): GameState | null {
+    const state = this.getState();
+    if (!state) return null;
+
+    const updatedState: GameState = {
+      ...state,
+      activeEvent: null,
+    };
+
+    this.repository.save(updatedState);
+    return updatedState;
+  }
+
+  /**
+   * Применить эффект события (ресурсы).
+   */
+  applyEventEffect(
+    resourceType: ResourceName | 'all',
+    amount: number,
+    targetZone: ZoneName | 'all'
+  ): GameState | null {
+    const state = this.getState();
+    if (!state) return null;
+
+    const zonesToUpdate: Array<Exclude<ZoneName, 'unknown'>> =
+      targetZone === 'all'
+        ? ['center', 'residential', 'industrial', 'green']
+        : targetZone === 'unknown'
+        ? []
+        : [targetZone];
+
+    const resourcesToUpdate: ResourceName[] =
+      resourceType === 'all'
+        ? ['energy', 'materials', 'food', 'knowledge']
+        : [resourceType];
+
+    let updatedZones = { ...state.zones };
+
+    for (const zone of zonesToUpdate) {
+      const currentZone = updatedZones[zone];
+      let updatedResources = { ...currentZone.resources };
+
+      for (const resource of resourcesToUpdate) {
+        updatedResources = {
+          ...updatedResources,
+          [resource]: Math.max(0, updatedResources[resource] + amount),
+        };
+      }
+
+      updatedZones = {
+        ...updatedZones,
+        [zone]: {
+          ...currentZone,
+          resources: updatedResources,
+        },
+      };
+    }
+
+    const updatedState: GameState = {
+      ...state,
+      zones: updatedZones,
+    };
+
+    this.repository.save(updatedState);
+    return updatedState;
+  }
+
+  /**
+   * Записать выбор для события-дилеммы.
+   */
+  recordEventChoice(eventId: number, choiceText: string): GameState | null {
+    const state = this.getState();
+    if (!state) return null;
+
+    const updatedTriggeredEvents = state.triggeredEvents.map((e) =>
+      e.eventId === eventId ? { ...e, choiceMade: choiceText } : e
+    );
+
+    const updatedState: GameState = {
+      ...state,
+      triggeredEvents: updatedTriggeredEvents,
+      activeEvent: null, // Закрываем событие после выбора
+    };
+
+    this.repository.save(updatedState);
+    return updatedState;
+  }
+
+  /**
+   * Получить список доступных событий для текущего акта.
+   * Возвращает eventIds которые: включены, подходят по стадии, ещё не запускались.
+   */
+  getAvailableEvents(): number[] {
+    const state = this.getState();
+    if (!state) return [];
+
+    const { enabledEventIds } = state.settings.eventSettings;
+    const triggeredIds = state.triggeredEvents.map((e) => e.eventId);
+
+    // Фильтруем: включённые, не запущенные
+    return enabledEventIds.filter((id) => !triggeredIds.includes(id));
   }
 }

@@ -4,10 +4,11 @@ import { useGameState } from '../hooks/useGameState';
 import scenarioData from '../data/scenario.json';
 import crisesData from '../data/crises.json';
 import rolesData from '../data/roles.json';
+import eventsData from '../data/events.json';
 import { getUpgradeCost, canAffordUpgrade } from '../data/zone-upgrade-costs';
 import type { GameState, ResourceName, ZoneName } from '../types/game-state';
 import { RESOURCE_ICONS } from '../types/game-state';
-import type { Crisis, GameRole } from '../types/game-data';
+import type { Crisis, GameRole, GameEvent } from '../types/game-data';
 
 const GAME_PHASE_NAMES = {
   setup: 'Настройка',
@@ -16,7 +17,7 @@ const GAME_PHASE_NAMES = {
   finished: 'Завершена',
 } as const;
 
-type Page = 'scenario' | 'resources' | 'zones' | 'votes' | 'participants' | 'promises' | 'settings';
+type Page = 'scenario' | 'resources' | 'zones' | 'votes' | 'participants' | 'promises' | 'events' | 'settings';
 
 const RESOURCE_NAMES: Record<ResourceName, string> = {
   energy: 'Энергия',
@@ -89,6 +90,7 @@ export function AdminDashboard() {
         {currentPage === 'votes' && <VotesPage state={state} gameState={gameState} />}
         {currentPage === 'participants' && <ParticipantsPage state={state} gameState={gameState} />}
         {currentPage === 'promises' && <PromisesPage state={state} />}
+        {currentPage === 'events' && <EventsPage state={state} gameState={gameState} />}
         {currentPage === 'settings' && <SettingsPage state={state} gameState={gameState} />}
       </main>
     </div>
@@ -175,6 +177,7 @@ function Sidebar({ currentPage, setCurrentPage, currentAct, state, gameState }: 
     { id: 'votes', label: 'Голосования', icon: '🗳️' },
     { id: 'participants', label: 'Участники', icon: '👥' },
     { id: 'promises', label: 'Обещания', icon: '✨' },
+    { id: 'events', label: 'События', icon: '🎲' },
     { id: 'settings', label: 'Настройки', icon: '⚙️' },
   ];
 
@@ -1913,6 +1916,537 @@ function PromisesPage({ state }: { state: GameState }) {
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ EVENTS PAGE ============
+
+const EVENT_TYPE_LABELS: Record<string, { label: string; color: string; icon: string }> = {
+  resource_gain: { label: 'Получение ресурсов', color: 'text-emerald-400', icon: '📈' },
+  resource_loss: { label: 'Потеря ресурсов', color: 'text-red-400', icon: '📉' },
+  dilemma: { label: 'Дилемма', color: 'text-amber-400', icon: '⚖️' },
+  narrative: { label: 'Сюжетное', color: 'text-blue-400', icon: '📖' },
+};
+
+const ZONE_LABELS: Record<string, string> = {
+  all: 'Все зоны',
+  center: 'Центр',
+  residential: 'Жилой квартал',
+  industrial: 'Промзона',
+  green: 'Зелёный пояс',
+};
+
+function EventsPage({ state, gameState }: PageProps) {
+  const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+  const [showEventDetails, setShowEventDetails] = useState(false);
+
+  const events = eventsData as GameEvent[];
+  const { eventSettings } = state.settings;
+  const currentAct = state.currentAct;
+
+  // Get events available for current act
+  const availableEvents = events.filter(e => e.stage.includes(currentAct));
+  const enabledEvents = events.filter(e => eventSettings.enabledEventIds.includes(e.id));
+
+  const handleToggleEvents = () => {
+    gameState.updateEventSettings({ enabled: !eventSettings.enabled });
+  };
+
+  const handleProbabilityChange = (probability: number) => {
+    gameState.updateEventSettings({ probability });
+  };
+
+  const handleToggleEvent = (eventId: number) => {
+    const newEnabledIds = eventSettings.enabledEventIds.includes(eventId)
+      ? eventSettings.enabledEventIds.filter(id => id !== eventId)
+      : [...eventSettings.enabledEventIds, eventId];
+    gameState.updateEventSettings({ enabledEventIds: newEnabledIds });
+  };
+
+  const handleTriggerEvent = (eventId: number) => {
+    const event = events.find(e => e.id === eventId);
+    if (!event) return;
+
+    if (event.type === 'dilemma') {
+      gameState.triggerDilemmaEvent(eventId);
+    } else {
+      gameState.triggerEvent(eventId);
+    }
+  };
+
+  const handleDismissEvent = () => {
+    gameState.dismissEvent();
+  };
+
+  const handleApplyEffect = (event: GameEvent) => {
+    if (event.type === 'resource_gain' || event.type === 'resource_loss') {
+      const effect = event.effect as { resource: string; amount: number; zone: string };
+      gameState.applyEventEffect(
+        effect.resource as ResourceName | 'all',
+        effect.amount,
+        effect.zone as ZoneName | 'all'
+      );
+    }
+    gameState.dismissEvent();
+  };
+
+  const selectedEvent = selectedEventId ? events.find(e => e.id === selectedEventId) : null;
+  const activeEvent = state.activeEvent ? events.find(e => e.id === state.activeEvent?.eventId) : null;
+
+  return (
+    <div className="p-6">
+      <h2 className="text-2xl font-bold text-[#E0E1DD] mb-6">Система событий</h2>
+
+      {/* Active Event Banner */}
+      {activeEvent && (
+        <div className="bg-amber-900/30 border border-amber-500/50 rounded-xl p-5 mb-6">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-2xl">{EVENT_TYPE_LABELS[activeEvent.type].icon}</span>
+                <h3 className="text-xl font-bold text-amber-300">{activeEvent.title}</h3>
+                <span className={`text-sm px-2 py-0.5 rounded ${EVENT_TYPE_LABELS[activeEvent.type].color} bg-[#0D1B2A]`}>
+                  {EVENT_TYPE_LABELS[activeEvent.type].label}
+                </span>
+              </div>
+              <p className="text-amber-100 mb-3">{activeEvent.narrative}</p>
+              <div className="bg-amber-900/40 rounded-lg p-3 mb-3">
+                <div className="text-amber-200 text-sm font-semibold mb-1">Для игроков:</div>
+                <div className="text-amber-100">{activeEvent.playerMessage}</div>
+              </div>
+
+              {/* Effect display */}
+              {(activeEvent.type === 'resource_gain' || activeEvent.type === 'resource_loss') && (
+                <div className="flex items-center gap-4 mb-3">
+                  <span className="text-[#778DA9]">Эффект:</span>
+                  <span className={activeEvent.type === 'resource_gain' ? 'text-emerald-400' : 'text-red-400'}>
+                    {(activeEvent.effect as { resource: string; amount: number; zone: string }).amount > 0 ? '+' : ''}
+                    {(activeEvent.effect as { resource: string; amount: number; zone: string }).amount}{' '}
+                    {RESOURCE_ICONS[(activeEvent.effect as { resource: string }).resource as ResourceName] || '🔄'}
+                    {' '}→ {ZONE_LABELS[(activeEvent.effect as { zone: string }).zone]}
+                  </span>
+                </div>
+              )}
+
+              {/* Dilemma choices */}
+              {activeEvent.type === 'dilemma' && (
+                <div className="space-y-2 mb-3">
+                  <div className="text-amber-200 text-sm font-semibold">Варианты выбора:</div>
+                  {((activeEvent.effect as { choices: Array<{ text: string; result: Record<string, number> }> }).choices || []).map((choice, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        // Apply choice effect
+                        Object.entries(choice.result).forEach(([resource, amount]) => {
+                          gameState.applyEventEffect(resource as ResourceName, amount as number, 'all');
+                        });
+                        gameState.recordEventChoice(activeEvent.id, choice.text);
+                        gameState.dismissEvent();
+                      }}
+                      className="w-full text-left px-4 py-2 bg-amber-800/50 hover:bg-amber-700/50 rounded-lg text-amber-100 transition-colors"
+                    >
+                      <span className="font-medium">{choice.text}</span>
+                      {Object.keys(choice.result).length > 0 && (
+                        <span className="ml-2 text-sm text-amber-300">
+                          ({Object.entries(choice.result).map(([r, a]) =>
+                            `${(a as number) > 0 ? '+' : ''}${a} ${RESOURCE_ICONS[r as ResourceName] || r}`
+                          ).join(', ')})
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {(activeEvent.type === 'resource_gain' || activeEvent.type === 'resource_loss') && (
+                <button
+                  onClick={() => handleApplyEffect(activeEvent)}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors"
+                >
+                  Применить эффект
+                </button>
+              )}
+              <button
+                onClick={handleDismissEvent}
+                className="px-4 py-2 bg-[#415A77] hover:bg-[#778DA9] text-white rounded-lg transition-colors"
+              >
+                Закрыть событие
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings */}
+      <div className="bg-[#1B263B] rounded-xl p-5 mb-6">
+        <h3 className="text-[#E0E1DD] font-semibold mb-4">Настройки событий</h3>
+
+        <div className="grid md:grid-cols-2 gap-6">
+          {/* Enable/Disable */}
+          <div className="flex items-center justify-between bg-[#0D1B2A] rounded-lg p-4">
+            <div>
+              <div className="text-[#E0E1DD] font-medium">Случайные события</div>
+              <div className="text-[#778DA9] text-sm">События будут появляться при смене сцен</div>
+            </div>
+            <button
+              onClick={handleToggleEvents}
+              className={`w-14 h-8 rounded-full transition-colors relative ${
+                eventSettings.enabled ? 'bg-emerald-500' : 'bg-[#415A77]'
+              }`}
+            >
+              <div
+                className={`w-6 h-6 bg-white rounded-full absolute top-1 transition-transform ${
+                  eventSettings.enabled ? 'translate-x-7' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Probability */}
+          <div className="bg-[#0D1B2A] rounded-lg p-4">
+            <div className="flex justify-between items-center mb-2">
+              <div className="text-[#E0E1DD] font-medium">Вероятность события</div>
+              <div className="text-emerald-400 font-bold">{eventSettings.probability}%</div>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={eventSettings.probability}
+              onChange={(e) => handleProbabilityChange(parseInt(e.target.value))}
+              className="w-full h-2 bg-[#415A77] rounded-lg appearance-none cursor-pointer"
+            />
+            <div className="flex justify-between text-xs text-[#778DA9] mt-1">
+              <span>0%</span>
+              <span>50%</span>
+              <span>100%</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 text-[#778DA9] text-sm">
+          Включённых событий: <span className="text-emerald-400 font-medium">{enabledEvents.length}</span> из {events.length}
+          {' | '}
+          Доступно для Акта {currentAct}: <span className="text-blue-400 font-medium">{availableEvents.length}</span>
+        </div>
+      </div>
+
+      {/* Available Events for Current Act */}
+      <div className="bg-[#1B263B] rounded-xl p-5 mb-6">
+        <h3 className="text-[#E0E1DD] font-semibold mb-4">
+          События для Акта {currentAct}
+          <span className="text-[#778DA9] font-normal text-sm ml-2">
+            (нажмите для запуска)
+          </span>
+        </h3>
+
+        {availableEvents.length === 0 ? (
+          <div className="text-center text-[#778DA9] py-8">
+            Для текущего акта нет доступных событий
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {availableEvents.map(event => {
+              const isEnabled = eventSettings.enabledEventIds.includes(event.id);
+              const typeInfo = EVENT_TYPE_LABELS[event.type];
+
+              return (
+                <div
+                  key={event.id}
+                  className={`bg-[#0D1B2A] rounded-lg p-4 border transition-all ${
+                    isEnabled
+                      ? 'border-[#415A77] hover:border-[#778DA9]'
+                      : 'border-transparent opacity-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{typeInfo.icon}</span>
+                      <span className="text-[#E0E1DD] font-medium">{event.title}</span>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleEvent(event.id);
+                      }}
+                      className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                        isEnabled
+                          ? 'bg-emerald-500 border-emerald-500'
+                          : 'border-[#415A77] hover:border-[#778DA9]'
+                      }`}
+                    >
+                      {isEnabled && <span className="text-white text-xs">✓</span>}
+                    </button>
+                  </div>
+
+                  <div className={`text-xs mb-2 ${typeInfo.color}`}>
+                    {typeInfo.label}
+                  </div>
+
+                  <p className="text-[#778DA9] text-sm mb-3 line-clamp-2">
+                    {event.description}
+                  </p>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedEventId(event.id);
+                        setShowEventDetails(true);
+                      }}
+                      className="flex-1 px-3 py-1.5 bg-[#1B263B] hover:bg-[#415A77] text-[#E0E1DD] text-sm rounded transition-colors"
+                    >
+                      Подробнее
+                    </button>
+                    <button
+                      onClick={() => handleTriggerEvent(event.id)}
+                      disabled={!isEnabled || !!state.activeEvent}
+                      className="flex-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm rounded transition-colors"
+                    >
+                      Запустить
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* All Events List */}
+      <div className="bg-[#1B263B] rounded-xl p-5 mb-6">
+        <h3 className="text-[#E0E1DD] font-semibold mb-4">
+          Все события
+          <span className="text-[#778DA9] font-normal text-sm ml-2">
+            ({events.length} событий)
+          </span>
+        </h3>
+
+        <div className="space-y-2 max-h-96 overflow-y-auto">
+          {events.map(event => {
+            const isEnabled = eventSettings.enabledEventIds.includes(event.id);
+            const typeInfo = EVENT_TYPE_LABELS[event.type];
+            const isAvailableNow = event.stage.includes(currentAct);
+
+            return (
+              <div
+                key={event.id}
+                className={`flex items-center gap-4 p-3 rounded-lg transition-colors ${
+                  isAvailableNow ? 'bg-[#0D1B2A]' : 'bg-[#0D1B2A]/50'
+                }`}
+              >
+                <button
+                  onClick={() => handleToggleEvent(event.id)}
+                  className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                    isEnabled
+                      ? 'bg-emerald-500 border-emerald-500'
+                      : 'border-[#415A77] hover:border-[#778DA9]'
+                  }`}
+                >
+                  {isEnabled && <span className="text-white text-xs">✓</span>}
+                </button>
+
+                <span className="text-xl">{typeInfo.icon}</span>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`font-medium ${isAvailableNow ? 'text-[#E0E1DD]' : 'text-[#778DA9]'}`}>
+                      {event.title}
+                    </span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${typeInfo.color} bg-[#1B263B]`}>
+                      {typeInfo.label}
+                    </span>
+                  </div>
+                  <div className="text-[#778DA9] text-xs truncate">{event.description}</div>
+                </div>
+
+                <div className="text-[#415A77] text-xs whitespace-nowrap">
+                  Акты: {event.stage.join(', ')}
+                </div>
+
+                <button
+                  onClick={() => {
+                    setSelectedEventId(event.id);
+                    setShowEventDetails(true);
+                  }}
+                  className="px-2 py-1 text-[#778DA9] hover:text-[#E0E1DD] text-sm transition-colors"
+                >
+                  👁️
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Event History */}
+      {state.triggeredEvents.length > 0 && (
+        <div className="bg-[#1B263B] rounded-xl p-5">
+          <h3 className="text-[#E0E1DD] font-semibold mb-4">
+            История событий
+            <span className="text-[#778DA9] font-normal text-sm ml-2">
+              ({state.triggeredEvents.length} событий)
+            </span>
+          </h3>
+
+          <div className="space-y-2">
+            {state.triggeredEvents.slice().reverse().map((triggered, i) => {
+              const event = events.find(e => e.id === triggered.eventId);
+              if (!event) return null;
+              const typeInfo = EVENT_TYPE_LABELS[event.type];
+
+              return (
+                <div key={i} className="flex items-center gap-4 p-3 bg-[#0D1B2A] rounded-lg">
+                  <span className="text-xl">{typeInfo.icon}</span>
+                  <div className="flex-1">
+                    <div className="text-[#E0E1DD] font-medium">{event.title}</div>
+                    <div className="text-[#778DA9] text-xs">
+                      Акт {triggered.actWhenTriggered}, Сцена {triggered.sceneWhenTriggered}
+                      {triggered.choiceMade && (
+                        <span className="ml-2 text-amber-400">
+                          Выбор: {triggered.choiceMade}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-[#415A77] text-xs">
+                    {new Date(triggered.triggeredAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Event Details Modal */}
+      {showEventDetails && selectedEvent && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-[#1B263B] rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">{EVENT_TYPE_LABELS[selectedEvent.type].icon}</span>
+                  <div>
+                    <h3 className="text-xl font-bold text-[#E0E1DD]">{selectedEvent.title}</h3>
+                    <div className={`text-sm ${EVENT_TYPE_LABELS[selectedEvent.type].color}`}>
+                      {EVENT_TYPE_LABELS[selectedEvent.type].label}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowEventDetails(false)}
+                  className="text-[#778DA9] hover:text-[#E0E1DD] text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <div className="text-[#778DA9] text-sm mb-1">Описание</div>
+                  <div className="text-[#E0E1DD]">{selectedEvent.description}</div>
+                </div>
+
+                <div>
+                  <div className="text-[#778DA9] text-sm mb-1">Доступно в актах</div>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map(act => (
+                      <span
+                        key={act}
+                        className={`px-3 py-1 rounded ${
+                          selectedEvent.stage.includes(act)
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-[#0D1B2A] text-[#415A77]'
+                        }`}
+                      >
+                        Акт {act}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-[#0D1B2A] rounded-lg p-4">
+                  <div className="text-amber-400 text-sm font-semibold mb-2">📜 Нарратив для игроков</div>
+                  <div className="text-[#E0E1DD] italic">{selectedEvent.narrative}</div>
+                </div>
+
+                <div className="bg-blue-900/30 border border-blue-500/30 rounded-lg p-4">
+                  <div className="text-blue-400 text-sm font-semibold mb-2">💡 Заметка для фасилитатора</div>
+                  <div className="text-blue-100">{selectedEvent.facilitatorNote}</div>
+                </div>
+
+                <div className="bg-[#0D1B2A] rounded-lg p-4">
+                  <div className="text-emerald-400 text-sm font-semibold mb-2">📱 Сообщение игрокам</div>
+                  <div className="text-[#E0E1DD]">{selectedEvent.playerMessage}</div>
+                </div>
+
+                {/* Effect details */}
+                {(selectedEvent.type === 'resource_gain' || selectedEvent.type === 'resource_loss') && (
+                  <div className="bg-[#0D1B2A] rounded-lg p-4">
+                    <div className={`text-sm font-semibold mb-2 ${
+                      selectedEvent.type === 'resource_gain' ? 'text-emerald-400' : 'text-red-400'
+                    }`}>
+                      {selectedEvent.type === 'resource_gain' ? '📈 Эффект: Получение' : '📉 Эффект: Потеря'}
+                    </div>
+                    <div className="text-[#E0E1DD]">
+                      {(selectedEvent.effect as { amount: number }).amount > 0 ? '+' : ''}
+                      {(selectedEvent.effect as { amount: number }).amount}{' '}
+                      {(selectedEvent.effect as { resource: string }).resource === 'all'
+                        ? 'всех ресурсов'
+                        : RESOURCE_NAMES[(selectedEvent.effect as { resource: string }).resource as ResourceName]
+                      }
+                      {' '}→{' '}
+                      {ZONE_LABELS[(selectedEvent.effect as { zone: string }).zone]}
+                    </div>
+                  </div>
+                )}
+
+                {selectedEvent.type === 'dilemma' && (
+                  <div className="bg-[#0D1B2A] rounded-lg p-4">
+                    <div className="text-amber-400 text-sm font-semibold mb-2">⚖️ Варианты выбора</div>
+                    <div className="space-y-2">
+                      {((selectedEvent.effect as { choices: Array<{ text: string; result: Record<string, number> }> }).choices || []).map((choice, i) => (
+                        <div key={i} className="bg-[#1B263B] rounded p-3">
+                          <div className="text-[#E0E1DD] font-medium">{choice.text}</div>
+                          {Object.keys(choice.result).length > 0 && (
+                            <div className="text-[#778DA9] text-sm mt-1">
+                              Результат: {Object.entries(choice.result).map(([r, a]) =>
+                                `${(a as number) > 0 ? '+' : ''}${a} ${RESOURCE_NAMES[r as ResourceName] || r}`
+                              ).join(', ')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setShowEventDetails(false)}
+                  className="px-4 py-2 bg-[#415A77] hover:bg-[#778DA9] text-white rounded-lg transition-colors"
+                >
+                  Закрыть
+                </button>
+                <button
+                  onClick={() => {
+                    handleTriggerEvent(selectedEvent.id);
+                    setShowEventDetails(false);
+                  }}
+                  disabled={!!state.activeEvent}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+                >
+                  Запустить событие
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

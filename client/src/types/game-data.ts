@@ -42,3 +42,29 @@ export interface Act {
 export interface Scenario {
   readonly acts: Act[];
 }
+
+export type EventType = 'resource_gain' | 'resource_loss' | 'dilemma' | 'narrative';
+
+export interface EventChoice {
+  readonly text: string;
+  readonly result: Partial<Record<'energy' | 'materials' | 'food' | 'knowledge', number>>;
+}
+
+export interface EventEffect {
+  readonly resource?: 'energy' | 'materials' | 'food' | 'knowledge' | 'all';
+  readonly amount?: number;
+  readonly zone?: 'center' | 'residential' | 'industrial' | 'green' | 'all';
+  readonly choices?: EventChoice[];
+}
+
+export interface GameEvent {
+  readonly id: number;
+  readonly title: string;
+  readonly description: string;
+  readonly stage: number[];
+  readonly type: EventType;
+  readonly effect: EventEffect;
+  readonly narrative: string;
+  readonly facilitatorNote: string;
+  readonly playerMessage: string;
+}
