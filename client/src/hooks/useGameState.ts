@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSocket } from './useSocket';
 import type { GameState, ZoneName, ResourceName, Difficulty, DistributionMode, GamePhase } from '../types/game-state';
+import { authApi } from '../services/auth-api';
 
 interface UseGameStateReturn {
   state: GameState | null;
@@ -92,10 +93,19 @@ export function useGameState(): UseGameStateReturn {
     if (isConnected) {
       emit('request:state');
 
-      // Auto-authenticate if password is saved
-      const savedPassword = sessionStorage.getItem(ADMIN_PASSWORD_KEY);
-      if (savedPassword && !isAdmin) {
-        emit('admin:auth', savedPassword);
+      // Auto-authenticate: try JWT token first, then saved password
+      if (!isAdmin) {
+        const jwtToken = authApi.getToken();
+        if (jwtToken) {
+          // Facilitator is logged in - use JWT for admin auth
+          emit('admin:auth', jwtToken);
+        } else {
+          // Fallback to saved password (legacy mode)
+          const savedPassword = sessionStorage.getItem(ADMIN_PASSWORD_KEY);
+          if (savedPassword) {
+            emit('admin:auth', savedPassword);
+          }
+        }
       }
     }
   }, [isConnected, emit, isAdmin]);

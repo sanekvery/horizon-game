@@ -1,6 +1,7 @@
 import type { Server, Socket } from 'socket.io';
 import type { GameService } from '../../application/services/game-service.js';
 import type { ZoneName, ResourceName, Difficulty, DistributionMode, GamePhase } from '../../domain/entities/game-state.js';
+import { authService } from '../../application/services/auth-service.js';
 
 interface SocketData {
   token?: string;
@@ -73,10 +74,22 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
       socket.emit('player:joined', { role });
     });
 
-    // Admin authentication
-    socket.on('admin:auth', (password: string) => {
+    // Admin authentication (password or JWT token)
+    socket.on('admin:auth', async (credential: string) => {
+      // First try JWT token authentication
+      const jwtPayload = await authService.verifyToken(credential);
+      if (jwtPayload) {
+        // Valid JWT token - user is authenticated facilitator
+        data.isAdmin = true;
+        socket.join('admins');
+        socket.emit('admin:authenticated');
+        broadcastState();
+        return;
+      }
+
+      // Fallback to password authentication
       const adminPassword = process.env.ADMIN_PASSWORD || 'horizon2024';
-      if (password === adminPassword) {
+      if (credential === adminPassword) {
         data.isAdmin = true;
         socket.join('admins');
         socket.emit('admin:authenticated');
