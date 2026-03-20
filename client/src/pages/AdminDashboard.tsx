@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
+import { authApi } from '../services/auth-api';
 import scenarioData from '../data/scenario.json';
 import crisesData from '../data/crises.json';
 import rolesData from '../data/roles.json';
@@ -170,6 +171,10 @@ interface SidebarProps {
 
 function Sidebar({ currentPage, setCurrentPage, currentAct, state, gameState }: SidebarProps) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const sessionCode = searchParams.get('session');
+  const isLoggedIn = authApi.isAuthenticated();
+
   const navItems: { id: Page; label: string; icon: string }[] = [
     { id: 'scenario', label: 'Сценарий', icon: '📋' },
     { id: 'zones', label: 'Зоны карты', icon: '🗺️' },
@@ -193,10 +198,31 @@ function Sidebar({ currentPage, setCurrentPage, currentAct, state, gameState }: 
 
   return (
     <aside className="w-64 bg-[#1B263B] border-r border-[#415A77]/30 flex flex-col">
-      {/* Logo */}
+      {/* Logo & Session Info */}
       <div className="p-6 border-b border-[#415A77]/30">
+        {/* Back to dashboard link */}
+        {isLoggedIn && (
+          <button
+            onClick={() => navigate('/facilitator')}
+            className="flex items-center gap-1 text-[#778DA9] hover:text-[#E0E1DD] text-sm mb-3 transition-colors"
+          >
+            <span>←</span>
+            <span>Мои игры</span>
+          </button>
+        )}
+
         <h1 className="text-xl font-bold text-[#E0E1DD]">Проект Горизонт</h1>
         <p className="text-[#778DA9] text-sm mt-1">Панель управления</p>
+
+        {/* Session Code */}
+        {sessionCode && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-[#778DA9] text-xs">Код:</span>
+            <span className="px-2 py-0.5 bg-[#D4A017]/20 text-[#D4A017] rounded font-mono text-sm">
+              {sessionCode}
+            </span>
+          </div>
+        )}
 
         {/* Game Phase Badge */}
         <div className="mt-3 flex items-center gap-2">

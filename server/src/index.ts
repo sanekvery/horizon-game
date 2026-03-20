@@ -11,6 +11,7 @@ import { SqliteGameStateRepository } from './infrastructure/database/sqlite-game
 import { GameService } from './application/services/game-service.js';
 import { createApiRoutes } from './presentation/routes/api-routes.js';
 import { createAuthRoutes } from './presentation/routes/auth-routes.js';
+import { createSessionRoutes } from './presentation/routes/session-routes.js';
 import { setupSocketHandlers } from './infrastructure/socket/socket-handler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -50,6 +51,7 @@ app.use(express.json());
 // API routes
 app.use('/api', createApiRoutes(gameService));
 app.use('/api/auth', createAuthRoutes());
+app.use('/api/sessions', createSessionRoutes());
 
 // Serve static files in production
 if (appConfig.isProduction) {
