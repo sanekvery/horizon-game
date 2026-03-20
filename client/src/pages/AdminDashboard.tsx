@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import { authApi } from '../services/auth-api';
+import { sessionApi } from '../services/session-api';
 import scenarioData from '../data/scenario.json';
 import crisesData from '../data/crises.json';
 import rolesData from '../data/roles.json';
@@ -44,10 +45,33 @@ export function AdminDashboard() {
     error,
     isAdmin,
     authenticateAdmin,
+    configureGame,
   } = gameState;
+
+  const [searchParams] = useSearchParams();
+  const sessionCode = searchParams.get('session');
 
   const [password, setPassword] = useState('');
   const [currentPage, setCurrentPage] = useState<Page>('scenario');
+  const configuredRef = useRef(false);
+
+  // Fetch session details and auto-configure game
+  useEffect(() => {
+    if (!sessionCode || !isAdmin || configuredRef.current) return;
+
+    const loadAndConfigureSession = async () => {
+      const result = await sessionApi.getByCode(sessionCode);
+      if (result.success && result.session) {
+        // Auto-configure game if in setup phase
+        if (state?.settings.gamePhase === 'setup') {
+          configureGame(result.session.playerCount, 'normal', 'qr');
+          configuredRef.current = true;
+        }
+      }
+    };
+
+    loadAndConfigureSession();
+  }, [sessionCode, isAdmin, state?.settings.gamePhase, configureGame]);
 
   // Password gate
   if (!isAdmin) {
@@ -242,13 +266,16 @@ function Sidebar({ currentPage, setCurrentPage, currentAct, state, gameState }: 
 
       {/* Quick Actions */}
       <div className="p-4 border-b border-[#415A77]/30 space-y-2">
-        <button
-          onClick={() => navigate('/setup')}
-          className="w-full flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#D4A017] to-[#B8860B] text-[#0D1B2A] rounded-lg font-medium hover:opacity-90 transition-opacity"
-        >
-          <span>🎮</span>
-          <span>Настройка игры</span>
-        </button>
+        {/* Show setup button only in setup phase */}
+        {state.settings.gamePhase === 'setup' && (
+          <button
+            onClick={() => navigate('/setup')}
+            className="w-full flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#D4A017] to-[#B8860B] text-[#0D1B2A] rounded-lg font-medium hover:opacity-90 transition-opacity"
+          >
+            <span>🎮</span>
+            <span>Настройка игры</span>
+          </button>
+        )}
         <button
           onClick={() => navigate('/qr')}
           className="w-full flex items-center gap-2 px-4 py-2 bg-[#415A77] hover:bg-[#778DA9] text-[#E0E1DD] rounded-lg transition-colors"
