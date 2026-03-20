@@ -1,6 +1,24 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: horizon-postgres
+    environment:
+      POSTGRES_DB: horizon
+      POSTGRES_USER: horizon
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-horizondb2024}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U horizon -d horizon"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   horizon:
     build: .
     container_name: horizon-game
@@ -9,6 +27,14 @@ services:
     environment:
       - NODE_ENV=production
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-horizon2024}
+      - DATABASE_URL=postgresql://horizon:${DB_PASSWORD:-horizondb2024}@postgres:5432/horizon
+      - JWT_SECRET=${JWT_SECRET:-horizon-jwt-secret-change-me}
     volumes:
       - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres_data:

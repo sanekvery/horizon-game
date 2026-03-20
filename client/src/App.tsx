@@ -6,6 +6,8 @@ import { MobilePlayer } from './pages/MobilePlayer';
 import { QRCodesPage } from './pages/QRCodesPage';
 import { GameSetup } from './pages/GameSetup';
 import { RoleLobby } from './pages/RoleLobby';
+import { FacilitatorAuth } from './pages/FacilitatorAuth';
+import { FacilitatorDashboard } from './pages/FacilitatorDashboard';
 
 // Страница входа (обход ngrok interstitial)
 function JoinPage() {
@@ -78,6 +80,8 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/map" element={<MapProjection />} />
+          <Route path="/auth" element={<FacilitatorAuth />} />
+          <Route path="/facilitator" element={<FacilitatorDashboard />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/setup" element={<GameSetup />} />
           <Route path="/qr" element={<QRCodesPage />} />

@@ -1,0 +1,153 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Фасилитаторы (пользователи системы)
+model Facilitator {
+  id                    String         @id @default(uuid())
+  email                 String         @unique
+  passwordHash          String         @map("password_hash")
+  name                  String?
+  role                  FacilitatorRole @default(FACILITATOR)
+  subscriptionType      SubscriptionType @default(FREE) @map("subscription_type")
+  subscriptionExpiresAt DateTime?      @map("subscription_expires_at")
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+
+  sessions              GameSession[]
+  characterProgress     CharacterProgress[]
+
+  @@map("facilitators")
+}
+
+enum FacilitatorRole {
+  FACILITATOR
+  ADMIN
+}
+
+enum SubscriptionType {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+// Игровые сессии
+model GameSession {
+  id                  String           @id @default(uuid())
+  facilitatorId       String           @map("facilitator_id")
+  facilitator         Facilitator      @relation(fields: [facilitatorId], references: [id])
+  code                String           @unique @db.VarChar(8)
+  name                String?
+  status              SessionStatus    @default(SETUP)
+  playerCount         Int              @map("player_count")
+  settings            Json             @default("{}")
+  state               Json             @default("{}")
+  progressionEnabled  Boolean          @default(false) @map("progression_enabled")
+  startedAt           DateTime?        @map("started_at")
+  finishedAt          DateTime?        @map("finished_at")
+  createdAt           DateTime         @default(now()) @map("created_at")
+
+  players             SessionPlayer[]
+  actionLogs          ActionLog[]
+  gameEvents          GameEvent[]
+
+  @@index([facilitatorId])
+  @@index([status])
+  @@index([code])
+  @@map("game_sessions")
+}
+
+enum SessionStatus {
+  SETUP
+  ACTIVE
+  PAUSED
+  FINISHED
+}
+
+// Участники сессий
+model SessionPlayer {
+  id                String         @id @default(uuid())
+  sessionId         String         @map("session_id")
+  session           GameSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  roleId            Int            @map("role_id")
+  playerName        String?        @map("player_name")
+  token             String         @unique @db.VarChar(16)
+  stats             Json           @default("{\"strength\":5,\"agility\":5,\"negotiation\":5,\"intellect\":5,\"charisma\":5,\"craft\":5}")
+  experienceGained  Int            @default(0) @map("experience_gained")
+  isConnected       Boolean        @default(false) @map("is_connected")
+  joinedAt          DateTime?      @map("joined_at")
+  lastSeenAt        DateTime?      @map("last_seen_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
+
+  actionLogs        ActionLog[]
+
+  @@index([sessionId])
+  @@index([token])
+  @@map("session_players")
+}
+
+// Лог действий
+model ActionLog {
+  id            String         @id @default(uuid())
+  sessionId     String         @map("session_id")
+  session       GameSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  playerId      String?        @map("player_id")
+  player        SessionPlayer? @relation(fields: [playerId], references: [id], onDelete: SetNull)
+  actorType     ActorType      @map("actor_type")
+  actionType    String         @map("action_type") @db.VarChar(50)
+  actionData    Json           @default("{}") @map("action_data")
+  gameContext   Json           @default("{}") @map("game_context")
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  @@index([sessionId])
+  @@index([createdAt])
+  @@map("action_logs")
+}
+
+enum ActorType {
+  PLAYER
+  FACILITATOR
+  SYSTEM
+}
+
+// События игры
+model GameEvent {
+  id              String       @id @default(uuid())
+  sessionId       String       @map("session_id")
+  session         GameSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  eventType       String       @map("event_type") @db.VarChar(50)
+  eventId         Int          @map("event_id")
+  triggeredBy     String       @map("triggered_by") @db.VarChar(50)
+  choiceMade      String?      @map("choice_made")
+  effectsApplied  Json?        @map("effects_applied")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  @@index([sessionId])
+  @@map("game_events")
+}
+
+// Прогресс персонажей (между играми)
+model CharacterProgress {
+  id                String       @id @default(uuid())
+  facilitatorId     String       @map("facilitator_id")
+  facilitator       Facilitator  @relation(fields: [facilitatorId], references: [id])
+  playerIdentifier  String       @map("player_identifier") @db.VarChar(255)
+  roleId            Int          @map("role_id")
+  totalGames        Int          @default(0) @map("total_games")
+  totalExperience   Int          @default(0) @map("total_experience")
+  stats             Json         @default("{}")
+  achievements      Json         @default("[]")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@unique([facilitatorId, playerIdentifier, roleId])
+  @@map("character_progress")
+}
