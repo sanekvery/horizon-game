@@ -26,7 +26,7 @@ export function FacilitatorDashboard() {
   // Create game modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [gameName, setGameName] = useState('');
-  const [playerCount, setPlayerCount] = useState(8);
+  const [playerCount, setPlayerCount] = useState(4);
   const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
 
@@ -65,6 +65,13 @@ export function FacilitatorDashboard() {
     navigate('/auth');
   };
 
+  const openCreateModal = () => {
+    setGameName('');
+    setPlayerCount(4);
+    setCreateError('');
+    setShowCreateModal(true);
+  };
+
   const handleCreateGame = async () => {
     if (playerCount < 4 || playerCount > 20) {
       setCreateError('Количество игроков должно быть от 4 до 20');
@@ -82,7 +89,7 @@ export function FacilitatorDashboard() {
     if (result.success && result.session) {
       setShowCreateModal(false);
       setGameName('');
-      setPlayerCount(8);
+      setPlayerCount(4);
       await loadSessions();
       // Navigate to admin for this session
       navigate(`/admin?session=${result.session.code}`);
@@ -177,7 +184,7 @@ export function FacilitatorDashboard() {
         {/* Quick Actions */}
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={openCreateModal}
             className="bg-[#1B263B] rounded-xl p-6 border border-[#415A77]/30 hover:border-[#D4A017]/50 transition-colors text-left group"
           >
             <div className="text-4xl mb-4">🎮</div>
@@ -272,7 +279,7 @@ export function FacilitatorDashboard() {
                 <div className="text-5xl mb-4">🎲</div>
                 <p className="text-[#778DA9] mb-4">У вас пока нет игр</p>
                 <button
-                  onClick={() => setShowCreateModal(true)}
+                  onClick={openCreateModal}
                   className="px-6 py-2 bg-[#D4A017] hover:bg-[#E0B030] text-[#0D1B2A] font-semibold rounded-lg transition-colors"
                 >
                   Создать первую игру
