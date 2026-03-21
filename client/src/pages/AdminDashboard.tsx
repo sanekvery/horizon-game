@@ -273,8 +273,8 @@ function Sidebar({ currentPage, setCurrentPage, currentAct, state, gameState }: 
     { id: 'settings', label: 'Настройки', icon: '⚙️' },
   ];
 
-  const connectedCount = state.roles.filter((r) => r.connected).length;
   const activeRoles = state.roles.filter((r) => r.isActive);
+  const connectedCount = activeRoles.filter((r) => r.connected).length;
   const claimedCount = activeRoles.filter((r) => r.claimedBy !== null).length;
 
   const handleEmergencyPause = () => {
@@ -345,6 +345,13 @@ function Sidebar({ currentPage, setCurrentPage, currentAct, state, gameState }: 
         >
           <span>📱</span>
           <span>QR-коды</span>
+        </button>
+        <button
+          onClick={() => window.open(sessionCode ? `/map?session=${sessionCode}` : '/map', '_blank')}
+          className="w-full flex items-center gap-2 px-4 py-2 bg-[#415A77] hover:bg-[#778DA9] text-[#E0E1DD] rounded-lg transition-colors"
+        >
+          <span>🗺️</span>
+          <span>Карта (проектор)</span>
         </button>
       </div>
 
@@ -1528,12 +1535,13 @@ function getFacilitatorTips(state: GameState): Array<{ type: 'info' | 'warning' 
     });
   }
 
-  // Connection warnings
-  const disconnected = state.roles.filter((r) => !r.connected);
-  if (disconnected.length > 5) {
+  // Connection warnings (only for active roles)
+  const activeRoles = state.roles.filter((r) => r.isActive);
+  const disconnected = activeRoles.filter((r) => !r.connected);
+  if (disconnected.length > Math.floor(activeRoles.length / 2)) {
     tips.push({
       type: 'warning',
-      text: `${disconnected.length} участников не подключены. Проверьте QR-коды.`,
+      text: `${disconnected.length} из ${activeRoles.length} участников не подключены. Проверьте QR-коды.`,
     });
   }
 
@@ -1582,6 +1590,9 @@ function ParticipantsPage({ state, gameState }: PageProps) {
   const tips = getFacilitatorTips(state);
 
   const filteredRoles = state.roles.filter((role) => {
+    // Only show active roles (based on playerCount)
+    if (!role.isActive) return false;
+
     const roleData = (rolesData as GameRole[]).find((r) => r.id === role.id);
     if (!roleData) return false;
 
@@ -1684,13 +1695,13 @@ function ParticipantsPage({ state, gameState }: PageProps) {
       <div className="grid grid-cols-5 gap-3 mb-6">
         <div className="bg-[#1B263B] rounded-lg p-3 text-center">
           <div className="text-emerald-400 text-2xl font-bold">
-            {state.roles.filter((r) => r.connected).length}
+            {state.roles.filter((r) => r.isActive && r.connected).length}
           </div>
           <div className="text-[#778DA9] text-xs">Онлайн</div>
         </div>
         <div className="bg-[#1B263B] rounded-lg p-3 text-center">
           <div className="text-[#E0E1DD] text-2xl font-bold">
-            {state.roles.filter((r) => r.secretRevealed).length}
+            {state.roles.filter((r) => r.isActive && r.secretRevealed).length}
           </div>
           <div className="text-[#778DA9] text-xs">Раскрыто</div>
         </div>
@@ -1708,7 +1719,7 @@ function ParticipantsPage({ state, gameState }: PageProps) {
         </div>
         <div className="bg-[#1B263B] rounded-lg p-3 text-center">
           <div className="text-red-400 text-2xl font-bold">
-            {state.roles.filter((r) => !r.connected).length}
+            {state.roles.filter((r) => r.isActive && !r.connected).length}
           </div>
           <div className="text-[#778DA9] text-xs">Офлайн</div>
         </div>
@@ -2585,9 +2596,10 @@ function SettingsPage({ state, gameState }: PageProps) {
     }
   };
 
-  const connectedCount = state.roles.filter((r) => r.connected).length;
+  const activeRolesSettings = state.roles.filter((r) => r.isActive);
+  const connectedCount = activeRolesSettings.filter((r) => r.connected).length;
   const promisesCount = state.promises.length;
-  const revealedSecrets = state.roles.filter((r) => r.secretRevealed).length;
+  const revealedSecrets = activeRolesSettings.filter((r) => r.secretRevealed).length;
   const activeVotes = state.votes.filter((v) => v.status === 'active').length;
 
   return (

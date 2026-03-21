@@ -276,8 +276,23 @@ export function SessionHistoryPage() {
         {/* Timeline */}
         <div className="bg-[#1B263B] rounded-xl border border-[#415A77]/30">
           {history.length === 0 ? (
-            <div className="p-8 text-center text-[#778DA9]">
-              Нет действий для отображения
+            <div className="p-12 text-center">
+              <div className="text-5xl mb-4">📋</div>
+              <div className="text-[#E0E1DD] text-lg font-medium mb-2">
+                История пока пуста
+              </div>
+              <div className="text-[#778DA9] max-w-md mx-auto">
+                {session?.status === 'SETUP' || session?.status === 'ACTIVE' ? (
+                  <>
+                    Как только начнётся игра и участники начнут выполнять действия,
+                    здесь появится полная хронология событий.
+                  </>
+                ) : (
+                  <>
+                    В этой сессии не было зафиксировано действий.
+                  </>
+                )}
+              </div>
             </div>
           ) : (
             <div className="divide-y divide-[#415A77]/20">
