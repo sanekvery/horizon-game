@@ -42,6 +42,8 @@ export function AdminDashboard() {
   const sessionCode = searchParams.get('session');
   const [sessionInitialized, setSessionInitialized] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
+  const [currentPage, setCurrentPage] = useState<Page>('scenario');
 
   // Initialize session state when opening admin panel
   useEffect(() => {
@@ -133,9 +135,6 @@ export function AdminDashboard() {
       </div>
     );
   }
-
-  const [password, setPassword] = useState('');
-  const [currentPage, setCurrentPage] = useState<Page>('scenario');
 
   // Password gate
   if (!isAdmin) {
