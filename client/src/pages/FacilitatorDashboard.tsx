@@ -432,7 +432,7 @@ function SessionCard({
         </div>
       </div>
       <div className="flex items-center gap-2">
-        {session.status === 'FINISHED' && (
+        {(session.status === 'ACTIVE' || session.status === 'PAUSED' || session.status === 'FINISHED') && (
           <button
             onClick={() => onHistory(session)}
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors text-sm"
