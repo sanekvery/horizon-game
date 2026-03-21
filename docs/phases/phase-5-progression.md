@@ -1,7 +1,7 @@
 # Фаза 5: Система прогрессии персонажей
 
-**Статус:** 🔄 В разработке
-**Даты:** 2026-03-21 — ...
+**Статус:** ✅ Базовая реализация завершена
+**Даты:** 2026-03-21
 
 ---
 
@@ -19,6 +19,8 @@
 - ✅ `progression-calculator.ts` — Расчёт бонусов на основе статов
 - ✅ `progression-service.ts` — Application service для управления прогрессией
 - ✅ `progression-routes.ts` — API endpoints для прогрессии
+- ✅ `socket-handler.ts` — Интеграция XP за действия (ресурсы, голосование, апгрейд, завершение игры)
+- ✅ `game-service.ts` — Поддержка бонусов при внесении ресурсов (craft stat)
 
 ### Client
 - ✅ `StatsDisplay.tsx` — Компонент отображения характеристик
@@ -26,6 +28,7 @@
 - ✅ `StatsEditor.tsx` — Редактор распределения очков
 - ✅ `progression-api.ts` — API клиент для прогрессии
 - ✅ `useProgression.ts` — React хук для работы с прогрессией
+- ✅ `MobilePlayer.tsx` — Интеграция отображения статов и XP
 
 ---
 
@@ -325,8 +328,8 @@ POST /api/sessions/:code/players/:roleId/xp
 
 ### Этап 2: Application Layer ✅
 - [x] Создать `ProgressionService`
-- [ ] Интегрировать начисление XP в `GameService`
-- [ ] Добавить расчёт бонусов при действиях
+- [x] Интегрировать начисление XP в socket-handler
+- [x] Добавить расчёт бонусов при действиях (craft → ресурсы)
 
 ### Этап 3: Infrastructure ✅
 - [x] Использовать существующие таблицы (SessionPlayer, CharacterProgress)
@@ -334,22 +337,22 @@ POST /api/sessions/:code/players/:roleId/xp
 
 ### Этап 4: API ✅
 - [x] Endpoints для прогрессии (`/api/progression/*`)
-- [ ] Socket events для XP
+- [x] Socket events для XP (`progression:xp-gained`, `progression:level-up`)
 
 ### Этап 5: Client — отображение ✅
 - [x] `StatsDisplay` компонент
 - [x] `ExperienceBar` компонент
-- [ ] Интеграция в `PlayerPage`
+- [x] Интеграция в `MobilePlayer` (PlayerPage)
 
 ### Этап 6: Client — редактирование ✅
 - [x] `StatsEditor` компонент
 - [x] `progression-api.ts` клиент
 - [x] `useProgression` хук
-- [ ] `PlayerProfile` страница
-- [ ] UI для распределения очков
+- [ ] `PlayerProfile` страница (отложено)
+- [ ] UI для распределения очков (отложено)
 
-### Этап 7: Интеграция
-- [ ] Применение бонусов в игровых механиках
+### Этап 7: Интеграция ✅
+- [x] Применение бонусов в игровых механиках (craft → ресурсы)
 - [ ] Тестирование влияния статов
 - [ ] Балансировка
 

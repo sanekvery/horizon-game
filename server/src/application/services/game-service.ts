@@ -461,7 +461,8 @@ export class GameService {
     roleId: number,
     zone: ZoneName,
     resource: ResourceName,
-    amount: number
+    amount: number,
+    bonusAmount: number = 0  // Extra resources added to zone (from craft stat bonus)
   ): Promise<{ success: boolean; error?: string; state?: GameState }> {
     const state = await this.getState(sessionCode);
     if (!state) return { success: false, error: 'Нет активной сессии' };
@@ -498,14 +499,15 @@ export class GameService {
         : r
     );
 
-    // Add to zone
+    // Add to zone (including bonus from craft stat)
+    const totalZoneContribution = amount + bonusAmount;
     const updatedZones = {
       ...state.zones,
       [zone]: {
         ...currentZone,
         resources: {
           ...currentZone.resources,
-          [resource]: currentZone.resources[resource] + amount,
+          [resource]: currentZone.resources[resource] + totalZoneContribution,
         },
       },
     };

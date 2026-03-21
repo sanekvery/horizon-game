@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
+import { useProgression, type XPGainEvent, type LevelUpEvent } from '../hooks/useProgression';
 import rolesData from '../data/roles.json';
 import crisesData from '../data/crises.json';
 import scenarioData from '../data/scenario.json';
@@ -8,6 +9,8 @@ import type { Role, Vote, ResourceName, ZoneName, Zone, GameState } from '../typ
 import { RESOURCE_ICONS, ZONE_NAMES_RU } from '../types/game-state';
 import type { GameRole, Crisis } from '../types/game-data';
 import { getUpgradeCost, canAffordUpgrade } from '../data/zone-upgrade-costs';
+import { StatsDisplay, type CharacterStats } from '../components/progression/StatsDisplay';
+import { ExperienceBar } from '../components/progression/ExperienceBar';
 
 type Screen =
   | 'onboarding'
@@ -44,6 +47,18 @@ export function MobilePlayer() {
   } = useGameState({ sessionCode });
 
   const [currentRole, setCurrentRole] = useState<Role | null>(null);
+
+  // Progression system hook
+  const {
+    stats: progressionStats,
+    isProgressionEnabled,
+    lastXPGain,
+    lastLevelUp,
+  } = useProgression({
+    sessionCode: sessionCode || '',
+    roleId: currentRole?.id,
+    enabled: !!sessionCode && !!currentRole,
+  });
   const [roleData, setRoleData] = useState<GameRole | null>(null);
   const [secretRevealed, setSecretRevealed] = useState(false);
   const [showSecretConfirm, setShowSecretConfirm] = useState(false);
@@ -309,6 +324,12 @@ export function MobilePlayer() {
             onContribute={contributeToZone}
             zoneData={roleData.zone !== 'unknown' ? state.zones[roleData.zone as Exclude<ZoneName, 'unknown'>] : undefined}
             onShowRoleInfo={() => setShowRoleModal(true)}
+            isProgressionEnabled={isProgressionEnabled}
+            playerStats={progressionStats?.stats}
+            playerLevel={progressionStats?.level}
+            playerExperience={progressionStats?.experienceGained}
+            lastXPGain={lastXPGain}
+            lastLevelUp={lastLevelUp}
           />
         )}
 
@@ -586,6 +607,13 @@ interface RoleCardScreenProps {
   onContribute: (zone: ZoneName, resource: ResourceName, amount: number) => void;
   zoneData?: Zone;
   onShowRoleInfo: () => void;
+  // Progression
+  isProgressionEnabled: boolean;
+  playerStats?: CharacterStats;
+  playerLevel?: number;
+  playerExperience?: number;
+  lastXPGain?: XPGainEvent | null;
+  lastLevelUp?: LevelUpEvent | null;
 }
 
 const RESOURCE_NAMES: Record<ResourceName, string> = {
@@ -684,6 +712,12 @@ function RoleCardScreen({
   onContribute,
   zoneData,
   onShowRoleInfo,
+  isProgressionEnabled,
+  playerStats,
+  playerLevel,
+  playerExperience,
+  lastXPGain,
+  lastLevelUp,
 }: RoleCardScreenProps) {
   const [showContribute, setShowContribute] = useState(false);
   const [showHowToPlay, setShowHowToPlay] = useState(false);
@@ -849,6 +883,52 @@ function RoleCardScreen({
           </div>
         )}
       </div>
+
+      {/* Progression System */}
+      {isProgressionEnabled && playerStats && playerLevel !== undefined && playerExperience !== undefined && (
+        <div className="bg-gradient-to-r from-[#1B263B] to-[#0D1B2A] border border-purple-500/30 rounded-xl p-4 mb-4">
+          <h3 className="text-purple-400 text-xs uppercase tracking-wide mb-3">
+            Прогрессия
+          </h3>
+
+          {/* Experience Bar */}
+          <ExperienceBar
+            totalXP={playerExperience}
+            level={playerLevel}
+            showDetails={true}
+            className="mb-3"
+          />
+
+          {/* Compact Stats Display */}
+          <StatsDisplay
+            stats={playerStats}
+            compact={true}
+            className="mt-3"
+          />
+
+          {/* XP Gain Notification */}
+          {lastXPGain && !lastLevelUp && (
+            <div className="mt-3 p-2 bg-emerald-900/30 border border-emerald-500/30 rounded-lg text-center">
+              <div className="text-emerald-400 text-sm font-medium">
+                +{lastXPGain.amount} XP
+              </div>
+            </div>
+          )}
+
+          {/* Level Up Notification */}
+          {lastLevelUp && (
+            <div className="mt-3 p-3 bg-[#D4A017]/20 border border-[#D4A017]/50 rounded-lg text-center animate-pulse">
+              <div className="text-[#D4A017] font-bold">Новый уровень!</div>
+              <div className="text-[#E0E1DD] text-sm">Уровень {lastLevelUp.newLevel}</div>
+              {lastLevelUp.availablePoints > 0 && (
+                <div className="text-purple-400 text-xs mt-1">
+                  +{lastLevelUp.availablePoints} очков развития
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Zone Info with Upgrade Progress */}
       {zoneData && (

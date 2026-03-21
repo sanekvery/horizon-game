@@ -3,6 +3,11 @@ import type { GameService } from '../../application/services/game-service.js';
 import type { ZoneName, ResourceName, Difficulty, DistributionMode, GamePhase } from '../../domain/entities/game-state.js';
 import { authService } from '../../application/services/auth-service.js';
 import { loggingService } from '../../application/services/logging-service.js';
+import { ProgressionService } from '../../application/services/progression-service.js';
+import { ProgressionCalculator } from '../../domain/services/progression-calculator.js';
+import { CharacterStats } from '../../domain/entities/character-stats.js';
+import { prisma } from '../database/prisma-game-state-repository.js';
+import type { XPReason } from '../../domain/entities/experience.js';
 
 interface SocketData {
   token?: string;
@@ -18,6 +23,9 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
   // Per-session timers (Map: sessionCode -> interval)
   const sessionTimers = new Map<string, NodeJS.Timeout>();
 
+  // Progression service for XP management
+  const progressionService = new ProgressionService(prisma);
+
   /**
    * Broadcast state to all clients in a specific session room.
    */
@@ -26,6 +34,44 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
     if (state) {
       io.to(`session:${sessionCode}`).emit('game:state', state);
     }
+  };
+
+  /**
+   * Award XP to a player and emit socket events.
+   * Returns true if XP was awarded (progression enabled), false otherwise.
+   */
+  const awardXP = async (
+    sessionCode: string,
+    roleId: number,
+    reason: XPReason,
+    additionalAmount: number = 0
+  ): Promise<boolean> => {
+    const result = await progressionService.awardXP(sessionCode, roleId, reason, additionalAmount);
+
+    if (!result) {
+      return false; // Progression not enabled or player not found
+    }
+
+    // Emit XP gain event to player
+    io.to(`session:${sessionCode}`).emit('progression:xp-gained', {
+      roleId,
+      amount: result.xpGained,
+      reason,
+      newTotal: result.newXP,
+      previousLevel: result.previousLevel,
+      newLevel: result.newLevel,
+    });
+
+    // Emit level up event if leveled up
+    if (result.leveledUp) {
+      io.to(`session:${sessionCode}`).emit('progression:level-up', {
+        roleId,
+        newLevel: result.newLevel,
+        availablePoints: result.newAvailablePoints,
+      });
+    }
+
+    return true;
   };
 
   /**
@@ -183,6 +229,9 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
           voteId,
           optionId,
         });
+
+        // Award XP for voting
+        await awardXP(data.sessionCode, role.id, 'VOTE_CAST');
       }
 
       await broadcastState(data.sessionCode);
@@ -221,7 +270,19 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
         const role = await gameService.getRoleByToken(data.sessionCode, data.token);
         if (!role) return;
 
-        const result = await gameService.contributeToZone(data.sessionCode, role.id, zone, resource, amount);
+        // Calculate craft bonus if progression is enabled
+        let bonusAmount = 0;
+        const isProgressionEnabled = await progressionService.isProgressionEnabled(data.sessionCode);
+        if (isProgressionEnabled) {
+          const playerStats = await progressionService.getSessionPlayerStats(data.sessionCode, role.id);
+          if (playerStats) {
+            const stats = CharacterStats.fromJSON(playerStats.stats);
+            const bonus = ProgressionCalculator.calculateResourceContributionBonus(stats, amount);
+            bonusAmount = bonus.bonusAmount;
+          }
+        }
+
+        const result = await gameService.contributeToZone(data.sessionCode, role.id, zone, resource, amount, bonusAmount);
         if (result.success && result.state) {
           // Log resource contribution
           await loggingService.logPlayerAction(data.sessionCode, role.id, 'RESOURCE_CONTRIBUTE', {
@@ -238,14 +299,19 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
               zone,
               resource,
               amount,
+              bonusAmount,  // Craft stat bonus
+              effectiveAmount: amount + bonusAmount,
               roleId: role.id,
               roleName: role.name,
               newTotal,
             });
           }
 
+          // Award XP for resource contribution
+          await awardXP(data.sessionCode, role.id, 'RESOURCE_CONTRIBUTE', Math.min(amount - 1, 3) * 5);
+
           await broadcastState(data.sessionCode);
-          socket.emit('player:contribute-success', { zone, resource, amount });
+          socket.emit('player:contribute-success', { zone, resource, amount, bonusAmount });
         } else {
           socket.emit('player:contribute-error', { error: result.error });
         }
@@ -467,6 +533,25 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
         finalScene: prevState?.currentScene,
       });
 
+      // Award XP to all players for completing the game
+      if (prevState) {
+        const activePlayers = prevState.roles.filter(r => r.isActive);
+
+        // Check if team won (all zones level >= 3)
+        const zones = ['center', 'residential', 'industrial', 'green'] as const;
+        const teamWon = zones.every(z => prevState.zones[z].level >= 3);
+
+        for (const player of activePlayers) {
+          // Game completion XP
+          await awardXP(data.sessionCode, player.id, 'GAME_COMPLETE');
+
+          // Bonus XP for winning
+          if (teamWon) {
+            await awardXP(data.sessionCode, player.id, 'GAME_WIN');
+          }
+        }
+      }
+
       await broadcastState(data.sessionCode);
       io.to(`session:${data.sessionCode}`).emit('game:finished');
     });
@@ -528,6 +613,15 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
           fromLevel,
           toLevel: result.newLevel,
         });
+
+        // Award XP to all connected players for zone upgrade
+        const currentState = await gameService.getState(data.sessionCode);
+        if (currentState) {
+          const connectedPlayers = currentState.roles.filter(r => r.isActive && r.connected);
+          for (const player of connectedPlayers) {
+            await awardXP(data.sessionCode, player.id, 'ZONE_UPGRADE');
+          }
+        }
 
         await broadcastState(data.sessionCode);
         socket.emit('admin:upgrade-success', { zone, newLevel: result.newLevel });
