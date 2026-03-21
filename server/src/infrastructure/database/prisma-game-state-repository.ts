@@ -4,7 +4,7 @@ import type { GameState, Role } from '../../domain/entities/game-state.js';
 import type { SessionAwareGameStateRepository } from '../../domain/repositories/game-state-repository.js';
 import { ROLE_NAMES } from '../../domain/entities/role-names.js';
 
-const prisma = new PrismaClient();
+export const prisma = new PrismaClient();
 
 /**
  * PostgreSQL-based game state repository for multi-session support.

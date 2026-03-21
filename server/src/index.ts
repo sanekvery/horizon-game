@@ -7,11 +7,12 @@ import { fileURLToPath } from 'url';
 import { networkInterfaces } from 'os';
 
 import { appConfig } from './infrastructure/config/index.js';
-import { prismaGameStateRepository } from './infrastructure/database/prisma-game-state-repository.js';
+import { prismaGameStateRepository, prisma } from './infrastructure/database/prisma-game-state-repository.js';
 import { GameService } from './application/services/game-service.js';
 import { createApiRoutes } from './presentation/routes/api-routes.js';
 import { createAuthRoutes } from './presentation/routes/auth-routes.js';
 import { createSessionRoutes } from './presentation/routes/session-routes.js';
+import { createProgressionRoutes } from './presentation/routes/progression-routes.js';
 import { setupSocketHandlers } from './infrastructure/socket/socket-handler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -42,6 +43,7 @@ app.use(express.json());
 app.use('/api', createApiRoutes(gameService));
 app.use('/api/auth', createAuthRoutes());
 app.use('/api/sessions', createSessionRoutes());
+app.use('/api/progression', createProgressionRoutes(prisma));
 
 // Serve static files in production
 if (appConfig.isProduction) {
