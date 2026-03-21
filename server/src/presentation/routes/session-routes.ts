@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { sessionService } from '../../application/services/session-service.js';
+import { loggingService, type HistoryOptions } from '../../application/services/logging-service.js';
 import { authMiddleware } from './auth-routes.js';
+import type { ActorType } from '@prisma/client';
 
 export function createSessionRoutes(): Router {
   const router = Router();
@@ -112,6 +114,75 @@ export function createSessionRoutes(): Router {
     } else {
       res.status(400).json(result);
     }
+  });
+
+  // ============ HISTORY ENDPOINTS ============
+
+  // Get session action history by code
+  router.get('/code/:code/history', async (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Не авторизован' });
+      return;
+    }
+
+    const sessionCode = req.params.code.toUpperCase();
+    const session = await sessionService.getSessionByCode(sessionCode);
+
+    if (!session) {
+      res.status(404).json({ success: false, error: 'Сессия не найдена' });
+      return;
+    }
+
+    // Verify ownership
+    const isOwner = await sessionService.verifySessionOwnership(session.id, req.user.id);
+    if (!isOwner) {
+      res.status(403).json({ success: false, error: 'Нет доступа к этой сессии' });
+      return;
+    }
+
+    const { limit, offset, actorType, actionTypes } = req.query;
+
+    const options: HistoryOptions = {
+      limit: limit ? Number(limit) : 50,
+      offset: offset ? Number(offset) : 0,
+      actorType: actorType as ActorType | undefined,
+      actionTypes: actionTypes ? (actionTypes as string).split(',') : undefined,
+    };
+
+    const history = await loggingService.getSessionHistory(sessionCode, options);
+    res.json({ success: true, history });
+  });
+
+  // Get session statistics by code
+  router.get('/code/:code/stats', async (req: Request, res: Response) => {
+    if (!req.user) {
+      res.status(401).json({ success: false, error: 'Не авторизован' });
+      return;
+    }
+
+    const sessionCode = req.params.code.toUpperCase();
+    const session = await sessionService.getSessionByCode(sessionCode);
+
+    if (!session) {
+      res.status(404).json({ success: false, error: 'Сессия не найдена' });
+      return;
+    }
+
+    // Verify ownership
+    const isOwner = await sessionService.verifySessionOwnership(session.id, req.user.id);
+    if (!isOwner) {
+      res.status(403).json({ success: false, error: 'Нет доступа к этой сессии' });
+      return;
+    }
+
+    const stats = await loggingService.getSessionStats(sessionCode);
+
+    if (!stats) {
+      res.status(404).json({ success: false, error: 'Статистика не найдена' });
+      return;
+    }
+
+    res.json({ success: true, stats });
   });
 
   return router;

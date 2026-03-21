@@ -117,6 +117,10 @@ export function FacilitatorDashboard() {
     }
   };
 
+  const handleViewHistory = (session: GameSession) => {
+    navigate(`/session/${session.code}/history`);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0D1B2A] flex items-center justify-center">
@@ -227,6 +231,7 @@ export function FacilitatorDashboard() {
                     session={session}
                     onManage={handleManageSession}
                     onDelete={handleDeleteSession}
+                    onHistory={handleViewHistory}
                   />
                 ))}
               </div>
@@ -244,6 +249,7 @@ export function FacilitatorDashboard() {
                     session={session}
                     onManage={handleManageSession}
                     onDelete={handleDeleteSession}
+                    onHistory={handleViewHistory}
                   />
                 ))}
               </div>
@@ -261,6 +267,7 @@ export function FacilitatorDashboard() {
                     session={session}
                     onManage={handleManageSession}
                     onDelete={handleDeleteSession}
+                    onHistory={handleViewHistory}
                   />
                 ))}
                 {finishedSessions.length > 5 && (
@@ -388,10 +395,12 @@ function SessionCard({
   session,
   onManage,
   onDelete,
+  onHistory,
 }: {
   session: GameSession;
   onManage: (session: GameSession) => void;
   onDelete: (session: GameSession) => void;
+  onHistory: (session: GameSession) => void;
 }) {
   const status = STATUS_LABELS[session.status];
 
@@ -423,6 +432,14 @@ function SessionCard({
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {session.status === 'FINISHED' && (
+          <button
+            onClick={() => onHistory(session)}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors text-sm"
+          >
+            История
+          </button>
+        )}
         <button
           onClick={() => onManage(session)}
           className="px-4 py-2 bg-[#415A77] hover:bg-[#778DA9] text-white rounded-lg transition-colors text-sm"

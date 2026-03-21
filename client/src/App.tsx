@@ -8,6 +8,7 @@ import { GameSetup } from './pages/GameSetup';
 import { RoleLobby } from './pages/RoleLobby';
 import { FacilitatorAuth } from './pages/FacilitatorAuth';
 import { FacilitatorDashboard } from './pages/FacilitatorDashboard';
+import { SessionHistoryPage } from './pages/SessionHistoryPage';
 
 // Страница входа (обход ngrok interstitial)
 function JoinPage() {
@@ -82,6 +83,7 @@ function App() {
           <Route path="/map" element={<MapProjection />} />
           <Route path="/auth" element={<FacilitatorAuth />} />
           <Route path="/facilitator" element={<FacilitatorDashboard />} />
+          <Route path="/session/:sessionCode/history" element={<SessionHistoryPage />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/setup" element={<GameSetup />} />
           <Route path="/qr" element={<QRCodesPage />} />

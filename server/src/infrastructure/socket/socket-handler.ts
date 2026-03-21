@@ -2,6 +2,7 @@ import type { Server, Socket } from 'socket.io';
 import type { GameService } from '../../application/services/game-service.js';
 import type { ZoneName, ResourceName, Difficulty, DistributionMode, GamePhase } from '../../domain/entities/game-state.js';
 import { authService } from '../../application/services/auth-service.js';
+import { loggingService } from '../../application/services/logging-service.js';
 
 interface SocketData {
   token?: string;
@@ -125,6 +126,13 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
       data.token = token;
       socket.join(`player:${role.id}`);
       await gameService.connectPlayer(data.sessionCode, token);
+
+      // Log player join
+      await loggingService.logPlayerAction(data.sessionCode, role.id, 'PLAYER_JOIN', {
+        roleName: role.name,
+        socketId: socket.id,
+      });
+
       await broadcastState(data.sessionCode);
 
       socket.emit('player:joined', { role });
@@ -145,6 +153,13 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
         if (result.success && result.token) {
           data.token = result.token;
           socket.join(`player:${roleId}`);
+
+          // Log role claim
+          await loggingService.logPlayerAction(data.sessionCode, roleId, 'ROLE_CLAIM', {
+            playerName,
+            roleId,
+          });
+
           await broadcastState(data.sessionCode);
           socket.emit('player:claim-success', { roleId, token: result.token });
         } else {
@@ -158,7 +173,18 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
      */
     socket.on('player:vote', async ({ voteId, optionId }: { voteId: string; optionId: string }) => {
       if (!data.token || !data.sessionCode) return;
+
+      const role = await gameService.getRoleByToken(data.sessionCode, data.token);
       await gameService.castVote(data.sessionCode, voteId, optionId);
+
+      // Log vote cast
+      if (role) {
+        await loggingService.logPlayerAction(data.sessionCode, role.id, 'VOTE_CAST', {
+          voteId,
+          optionId,
+        });
+      }
+
       await broadcastState(data.sessionCode);
     });
 
@@ -197,6 +223,13 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
 
         const result = await gameService.contributeToZone(data.sessionCode, role.id, zone, resource, amount);
         if (result.success) {
+          // Log resource contribution
+          await loggingService.logPlayerAction(data.sessionCode, role.id, 'RESOURCE_CONTRIBUTE', {
+            zone,
+            resource,
+            amount,
+          });
+
           await broadcastState(data.sessionCode);
           socket.emit('player:contribute-success', { zone, resource, amount });
         } else {
@@ -241,7 +274,16 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
 
     socket.on('admin:set-act', async (act: 1 | 2 | 3 | 4 | 5) => {
       if (!data.isAdmin || !data.sessionCode) return;
+
+      const prevState = await gameService.getState(data.sessionCode);
       await gameService.setAct(data.sessionCode, act);
+
+      // Log act change
+      await loggingService.logAdminAction(data.sessionCode, 'ACT_CHANGE', {
+        previousAct: prevState?.currentAct,
+        newAct: act,
+      });
+
       await broadcastState(data.sessionCode);
     });
 
@@ -255,13 +297,27 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
       if (!data.isAdmin || !data.sessionCode) return;
       await gameService.startTimer(data.sessionCode, seconds);
       startTimerInterval(data.sessionCode);
+
+      // Log timer start
+      await loggingService.logAdminAction(data.sessionCode, 'TIMER_START', {
+        seconds,
+      });
+
       await broadcastState(data.sessionCode);
     });
 
     socket.on('admin:stop-timer', async () => {
       if (!data.isAdmin || !data.sessionCode) return;
+
+      const prevState = await gameService.getState(data.sessionCode);
       stopTimerInterval(data.sessionCode);
       await gameService.stopTimer(data.sessionCode);
+
+      // Log timer stop
+      await loggingService.logAdminAction(data.sessionCode, 'TIMER_STOP', {
+        remainingSeconds: prevState?.timer.remainingSec,
+      });
+
       await broadcastState(data.sessionCode);
     });
 
@@ -374,6 +430,9 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
       if (!data.isAdmin || !data.sessionCode) return;
       const result = await gameService.startGame(data.sessionCode);
       if (result.success) {
+        // Log game start
+        await loggingService.logAdminAction(data.sessionCode, 'GAME_START', {});
+
         await broadcastState(data.sessionCode);
         socket.emit('admin:start-game-success');
         io.to(`session:${data.sessionCode}`).emit('game:started');
@@ -384,7 +443,16 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
 
     socket.on('admin:finish-game', async () => {
       if (!data.isAdmin || !data.sessionCode) return;
+
+      const prevState = await gameService.getState(data.sessionCode);
       await gameService.finishGame(data.sessionCode);
+
+      // Log game finish
+      await loggingService.logAdminAction(data.sessionCode, 'GAME_FINISH', {
+        finalAct: prevState?.currentAct,
+        finalScene: prevState?.currentScene,
+      });
+
       await broadcastState(data.sessionCode);
       io.to(`session:${data.sessionCode}`).emit('game:finished');
     });
@@ -447,6 +515,12 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
     socket.on('admin:trigger-event', async (eventId: number) => {
       if (!data.isAdmin || !data.sessionCode) return;
       await gameService.triggerEvent(data.sessionCode, eventId);
+
+      // Log event trigger
+      await loggingService.logAdminAction(data.sessionCode, 'EVENT_TRIGGER', {
+        eventId,
+      });
+
       await broadcastState(data.sessionCode);
     });
 
@@ -493,6 +567,16 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
     socket.on('disconnect', async () => {
       console.log(`Client disconnected: ${socket.id}`);
       if (data.token && data.sessionCode) {
+        const role = await gameService.getRoleByToken(data.sessionCode, data.token);
+
+        // Log player disconnect
+        if (role) {
+          await loggingService.logPlayerAction(data.sessionCode, role.id, 'PLAYER_DISCONNECT', {
+            roleName: role.name,
+            socketId: socket.id,
+          });
+        }
+
         await gameService.disconnectPlayer(data.sessionCode, data.token);
         await broadcastState(data.sessionCode);
       }
