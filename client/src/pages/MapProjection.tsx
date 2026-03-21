@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import scenarioData from '../data/scenario.json';
 import rolesData from '../data/roles.json';
@@ -31,7 +32,10 @@ function formatTime(seconds: number): string {
 // ============ MAIN COMPONENT ============
 
 export function MapProjection() {
-  const { state, isConnected } = useGameState();
+  const [searchParams] = useSearchParams();
+  const sessionCode = searchParams.get('session');
+
+  const { state, isConnected, isSessionJoined } = useGameState({ sessionCode });
 
   // Animation states
   const [fogLayers, setFogLayers] = useState([1, 1, 1, 1]);
@@ -179,10 +183,12 @@ export function MapProjection() {
   // Check if we're in Act V for floating promises
   const showFloatingPromises = state?.currentAct === 5;
 
-  if (!isConnected) {
+  if (!isConnected || !isSessionJoined) {
     return (
       <div className="fixed inset-0 bg-[#0D1B2A] flex items-center justify-center">
-        <div className="text-[#778DA9] text-2xl animate-pulse">Подключение к серверу...</div>
+        <div className="text-[#778DA9] text-2xl animate-pulse">
+          {!isConnected ? 'Подключение к серверу...' : 'Присоединение к сессии...'}
+        </div>
       </div>
     );
   }

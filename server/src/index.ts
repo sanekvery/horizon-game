@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import { networkInterfaces } from 'os';
 
 import { appConfig } from './infrastructure/config/index.js';
-import { SqliteGameStateRepository } from './infrastructure/database/sqlite-game-state-repository.js';
+import { prismaGameStateRepository } from './infrastructure/database/prisma-game-state-repository.js';
 import { GameService } from './application/services/game-service.js';
 import { createApiRoutes } from './presentation/routes/api-routes.js';
 import { createAuthRoutes } from './presentation/routes/auth-routes.js';
@@ -17,19 +17,9 @@ import { setupSocketHandlers } from './infrastructure/socket/socket-handler.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Initialize dependencies
-// В Docker данные сохраняются в /app/data
-const dbPath = process.env.NODE_ENV === 'production' ? './data/game.db' : 'game.db';
-const repository = new SqliteGameStateRepository(dbPath);
-const gameService = new GameService(repository);
-
-// Initialize session on startup
-const initialState = gameService.getOrCreateSession();
-console.log(`Сессия инициализирована: ${initialState.sessionId}`);
-console.log(`Создано ${initialState.roles.length} ролей:`);
-initialState.roles.forEach((role) => {
-  console.log(`  ${role.id}. ${role.name} — токен: ${role.token}`);
-});
+// Initialize dependencies with PostgreSQL-based repository
+const gameService = new GameService(prismaGameStateRepository);
+console.log('🎮 GameService инициализирован с PostgreSQL хранилищем');
 
 // Create Express app
 const app = express();
@@ -111,12 +101,10 @@ httpServer.listen(appConfig.port, () => {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\nЗавершение работы...');
-  repository.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   console.log('\nЗавершение работы...');
-  repository.close();
   process.exit(0);
 });

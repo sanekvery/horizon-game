@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import { RoleCard } from '../components/RoleCard';
 import rolesData from '../data/roles.json';
@@ -9,7 +9,10 @@ const roles = rolesData as GameRole[];
 
 export function RoleLobby() {
   const navigate = useNavigate();
-  const { state, isConnected, claimRole } = useGameState();
+  const [searchParams] = useSearchParams();
+  const sessionCode = searchParams.get('session');
+
+  const { state, isConnected, isSessionJoined, claimRole } = useGameState({ sessionCode });
   const [playerName, setPlayerName] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -75,22 +78,26 @@ export function RoleLobby() {
 
     // Redirect to game after a short delay to let the claim propagate
     setTimeout(() => {
-      navigate(`/play/${token}`);
+      const sessionParam = sessionCode ? `?session=${sessionCode}` : '';
+      navigate(`/play/${token}${sessionParam}`);
     }, 500);
   };
 
   const handleEnterGame = () => {
     if (claimedToken) {
-      navigate(`/play/${claimedToken}`);
+      const sessionParam = sessionCode ? `?session=${sessionCode}` : '';
+      navigate(`/play/${claimedToken}${sessionParam}`);
     }
   };
 
-  if (!isConnected) {
+  if (!isConnected || !isSessionJoined) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#1B263B] to-[#0D1B2A] flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin text-4xl mb-4">⏳</div>
-          <p className="text-[#778DA9]">Подключение...</p>
+          <p className="text-[#778DA9]">
+            {!isConnected ? 'Подключение...' : 'Присоединение к сессии...'}
+          </p>
         </div>
       </div>
     );

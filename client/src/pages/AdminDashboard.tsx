@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import { authApi } from '../services/auth-api';
+import { sessionApi } from '../services/session-api';
 import scenarioData from '../data/scenario.json';
 import crisesData from '../data/crises.json';
 import rolesData from '../data/roles.json';
@@ -37,14 +38,101 @@ const ZONE_NAMES = {
 type EditableZone = keyof typeof ZONE_NAMES;
 
 export function AdminDashboard() {
-  const gameState = useGameState();
+  const [searchParams] = useSearchParams();
+  const sessionCode = searchParams.get('session');
+  const [sessionInitialized, setSessionInitialized] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+
+  // Initialize session state when opening admin panel
+  useEffect(() => {
+    const initSession = async () => {
+      if (!sessionCode) {
+        setSessionError('No session code provided');
+        return;
+      }
+
+      // First, get session info from PostgreSQL
+      const sessionResult = await sessionApi.getByCode(sessionCode);
+      if (!sessionResult.success || !sessionResult.session) {
+        setSessionError('Session not found');
+        return;
+      }
+
+      // Initialize game state for this session
+      try {
+        const response = await fetch(`/api/init-session`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionCode,
+            playerCount: sessionResult.session.playerCount,
+          }),
+        });
+
+        if (response.ok) {
+          setSessionInitialized(true);
+        } else {
+          setSessionError('Failed to initialize session');
+        }
+      } catch (err) {
+        setSessionError('Failed to initialize session');
+      }
+    };
+
+    initSession();
+  }, [sessionCode]);
+
+  const gameState = useGameState({ sessionCode: sessionInitialized ? sessionCode : null });
   const {
     state,
     isConnected,
+    isSessionJoined,
     error,
     isAdmin,
     authenticateAdmin,
   } = gameState;
+
+  // Show error if no session code
+  if (!sessionCode) {
+    return (
+      <div className="min-h-screen bg-[#0D1B2A] flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-400 text-xl mb-4">No session code provided</div>
+          <a href="/facilitator" className="text-[#D4A017] hover:underline">
+            Go to Facilitator Dashboard
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if session initialization failed
+  if (sessionError) {
+    return (
+      <div className="min-h-screen bg-[#0D1B2A] flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-400 text-xl mb-4">{sessionError}</div>
+          <a href="/facilitator" className="text-[#D4A017] hover:underline">
+            Go to Facilitator Dashboard
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while initializing session
+  if (!sessionInitialized || !isConnected || !isSessionJoined) {
+    return (
+      <div className="min-h-screen bg-[#0D1B2A] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin text-4xl mb-4">&#9203;</div>
+          <div className="text-[#778DA9] text-xl">
+            {!sessionInitialized ? 'Initializing session...' : !isConnected ? 'Connecting...' : 'Joining session...'}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const [password, setPassword] = useState('');
   const [currentPage, setCurrentPage] = useState<Page>('scenario');

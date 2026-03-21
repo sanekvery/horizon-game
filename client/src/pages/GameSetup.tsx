@@ -21,7 +21,9 @@ export function GameSetup() {
   const [searchParams] = useSearchParams();
   const sessionCode = searchParams.get('session');
 
-  const { state, isAdmin, configureGame, authenticateAdmin, isConnected } = useGameState();
+  const { state, isAdmin, configureGame, authenticateAdmin, isConnected, isSessionJoined } = useGameState({
+    sessionCode,
+  });
 
   const [sessionPlayerCount, setSessionPlayerCount] = useState<number | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -69,12 +71,14 @@ export function GameSetup() {
     }, 300);
   };
 
-  if (!isConnected || sessionLoading) {
+  if (!isConnected || !isSessionJoined || sessionLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#1B263B] to-[#0D1B2A] flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin text-4xl mb-4">⏳</div>
-          <p className="text-[#778DA9]">{sessionLoading ? 'Загрузка сессии...' : 'Подключение...'}</p>
+          <div className="animate-spin text-4xl mb-4">&#9203;</div>
+          <p className="text-[#778DA9]">
+            {sessionLoading ? 'Загрузка сессии...' : !isConnected ? 'Подключение...' : 'Присоединение к сессии...'}
+          </p>
         </div>
       </div>
     );

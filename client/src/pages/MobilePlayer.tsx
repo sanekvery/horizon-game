@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import rolesData from '../data/roles.json';
 import crisesData from '../data/crises.json';
@@ -28,16 +28,20 @@ const DEADLINE_OPTIONS = [
 
 export function MobilePlayer() {
   const { token } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
+  const sessionCode = searchParams.get('session');
+
   const {
     state,
     isConnected,
+    isSessionJoined,
     isLoading,
     error,
     joinAsPlayer,
     castVote,
     setPromise,
     contributeToZone,
-  } = useGameState();
+  } = useGameState({ sessionCode });
 
   const [currentRole, setCurrentRole] = useState<Role | null>(null);
   const [roleData, setRoleData] = useState<GameRole | null>(null);
@@ -231,16 +235,19 @@ export function MobilePlayer() {
     return <ErrorScreen message="Токен не указан" />;
   }
 
-  if (isLoading || !isConnected) {
+  if (isLoading || !isConnected || !isSessionJoined) {
     return (
       <div className="min-h-screen bg-[#0D1B2A] flex flex-col items-center justify-center p-6">
         <div className="w-12 h-12 border-4 border-[#415A77] border-t-[#D4A017] rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-[#778DA9] mb-4">Подключение...</p>
+        <p className="text-[#778DA9] mb-4">
+          {!isConnected ? 'Подключение...' : !isSessionJoined ? 'Присоединение к сессии...' : 'Загрузка...'}
+        </p>
         <div className="bg-[#1B263B] rounded-lg p-4 text-xs text-left w-full max-w-sm">
           <div className="text-[#778DA9] mb-2">DEBUG INFO:</div>
           <div className="text-[#E0E1DD] space-y-1">
             <div>token: {debugInfo.token}</div>
             <div>isConnected: {String(debugInfo.isConnected)}</div>
+            <div>isSessionJoined: {String(isSessionJoined)}</div>
             <div>isLoading: {String(debugInfo.isLoading)}</div>
             <div>hasState: {String(debugInfo.hasState)}</div>
             <div>error: {debugInfo.error}</div>

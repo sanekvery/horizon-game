@@ -10,7 +10,7 @@ import type {
   GamePhase,
   GameSettings,
 } from '../../domain/entities/game-state.js';
-import type { GameStateRepository } from '../../domain/repositories/game-state-repository.js';
+import type { SessionAwareGameStateRepository } from '../../domain/repositories/game-state-repository.js';
 import {
   getUpgradeCost,
   canAffordUpgrade,
@@ -25,27 +25,43 @@ export interface UpgradeResult {
   newLevel?: number;
 }
 
+/**
+ * Session-aware GameService for multi-session support.
+ * All methods now accept sessionCode as the first parameter.
+ */
 export class GameService {
-  constructor(private readonly repository: GameStateRepository) {}
+  constructor(private readonly repository: SessionAwareGameStateRepository) {}
 
-  getOrCreateSession(): GameState {
-    const existing = this.repository.getCurrentSession();
+  /**
+   * Get or initialize game state for a session.
+   */
+  async getOrCreateSession(sessionCode: string, playerCount: number): Promise<GameState | null> {
+    const existing = await this.repository.getSessionState(sessionCode);
     if (existing) return existing;
-    return this.repository.createSession(nanoid(12));
+    return this.repository.initializeSession(sessionCode, playerCount);
   }
 
-  getState(): GameState | null {
-    return this.repository.getCurrentSession();
+  /**
+   * Get current state for a session.
+   */
+  async getState(sessionCode: string): Promise<GameState | null> {
+    return this.repository.getSessionState(sessionCode);
   }
 
-  getRoleByToken(token: string): GameState['roles'][number] | null {
-    const state = this.getState();
+  /**
+   * Find role by token within a session.
+   */
+  async getRoleByToken(sessionCode: string, token: string): Promise<GameState['roles'][number] | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
     return state.roles.find((r) => r.token === token) || null;
   }
 
-  connectPlayer(token: string): GameState | null {
-    const state = this.getState();
+  /**
+   * Connect player by token.
+   */
+  async connectPlayer(sessionCode: string, token: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const roleIndex = state.roles.findIndex((r) => r.token === token);
@@ -56,12 +72,15 @@ export class GameService {
     );
 
     const updatedState: GameState = { ...state, roles: updatedRoles };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  disconnectPlayer(token: string): GameState | null {
-    const state = this.getState();
+  /**
+   * Disconnect player by token.
+   */
+  async disconnectPlayer(sessionCode: string, token: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedRoles = state.roles.map((role) =>
@@ -69,42 +88,54 @@ export class GameService {
     );
 
     const updatedState: GameState = { ...state, roles: updatedRoles };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  setAct(act: 1 | 2 | 3 | 4 | 5): GameState | null {
-    const state = this.getState();
+  /**
+   * Set current act.
+   */
+  async setAct(sessionCode: string, act: 1 | 2 | 3 | 4 | 5): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedState: GameState = { ...state, currentAct: act, currentScene: 1 };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  setScene(scene: number): GameState | null {
-    const state = this.getState();
+  /**
+   * Set current scene.
+   */
+  async setScene(sessionCode: string, scene: number): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedState: GameState = { ...state, currentScene: scene };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  startTimer(seconds: number): GameState | null {
-    const state = this.getState();
+  /**
+   * Start timer with given seconds.
+   */
+  async startTimer(sessionCode: string, seconds: number): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedState: GameState = {
       ...state,
       timer: { running: true, remainingSec: seconds },
     };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  tickTimer(): GameState | null {
-    const state = this.getState();
+  /**
+   * Tick timer (decrement by 1 second).
+   */
+  async tickTimer(sessionCode: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state || !state.timer.running) return state;
 
     const newRemaining = Math.max(0, state.timer.remainingSec - 1);
@@ -115,24 +146,30 @@ export class GameService {
         remainingSec: newRemaining,
       },
     };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  stopTimer(): GameState | null {
-    const state = this.getState();
+  /**
+   * Stop timer.
+   */
+  async stopTimer(sessionCode: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedState: GameState = {
       ...state,
       timer: { ...state.timer, running: false },
     };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  updateZoneLevel(zone: ZoneName, level: number): GameState | null {
-    const state = this.getState();
+  /**
+   * Update zone level.
+   */
+  async updateZoneLevel(sessionCode: string, zone: ZoneName, level: number): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     if (zone === 'unknown') return state;
@@ -143,16 +180,20 @@ export class GameService {
     };
 
     const updatedState: GameState = { ...state, zones: updatedZones };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  updateZoneResource(
+  /**
+   * Update zone resource amount.
+   */
+  async updateZoneResource(
+    sessionCode: string,
     zone: ZoneName,
     resource: ResourceName,
     amount: number
-  ): GameState | null {
-    const state = this.getState();
+  ): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     if (zone === 'unknown') return state;
@@ -172,12 +213,15 @@ export class GameService {
     };
 
     const updatedState: GameState = { ...state, zones: updatedZones };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  revealUnknownZone(): GameState | null {
-    const state = this.getState();
+  /**
+   * Reveal unknown zone.
+   */
+  async revealUnknownZone(sessionCode: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedState: GameState = {
@@ -187,12 +231,15 @@ export class GameService {
         unknown: { revealed: true },
       },
     };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  createVote(question: string, options: string[]): GameState | null {
-    const state = this.getState();
+  /**
+   * Create a new vote.
+   */
+  async createVote(sessionCode: string, question: string, options: string[]): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const voteOptions: VoteOption[] = options.map((text, i) => ({
@@ -212,12 +259,15 @@ export class GameService {
       ...state,
       votes: [...state.votes, newVote],
     };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  startVote(voteId: string): GameState | null {
-    const state = this.getState();
+  /**
+   * Start a vote.
+   */
+  async startVote(sessionCode: string, voteId: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedVotes = state.votes.map((v) =>
@@ -225,12 +275,15 @@ export class GameService {
     );
 
     const updatedState: GameState = { ...state, votes: updatedVotes };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  castVote(voteId: string, optionId: string): GameState | null {
-    const state = this.getState();
+  /**
+   * Cast a vote.
+   */
+  async castVote(sessionCode: string, voteId: string, optionId: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const vote = state.votes.find((v) => v.id === voteId);
@@ -249,12 +302,15 @@ export class GameService {
     );
 
     const updatedState: GameState = { ...state, votes: updatedVotes };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  closeVote(voteId: string): GameState | null {
-    const state = this.getState();
+  /**
+   * Close a vote.
+   */
+  async closeVote(sessionCode: string, voteId: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedVotes = state.votes.map((v) =>
@@ -262,12 +318,15 @@ export class GameService {
     );
 
     const updatedState: GameState = { ...state, votes: updatedVotes };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  lightCandle(candleId: number): GameState | null {
-    const state = this.getState();
+  /**
+   * Light a candle.
+   */
+  async lightCandle(sessionCode: string, candleId: number): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     if (state.candlesLit.includes(candleId)) return state;
@@ -276,21 +335,27 @@ export class GameService {
       ...state,
       candlesLit: [...state.candlesLit, candleId],
     };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  revealFog(): GameState | null {
-    const state = this.getState();
+  /**
+   * Reveal fog.
+   */
+  async revealFog(sessionCode: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedState: GameState = { ...state, fogRevealed: true };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  setPromise(roleId: number, text: string, deadline: string): GameState | null {
-    const state = this.getState();
+  /**
+   * Set player promise.
+   */
+  async setPromise(sessionCode: string, roleId: number, text: string, deadline: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const existingIndex = state.promises.findIndex((p) => p.roleId === roleId);
@@ -310,12 +375,15 @@ export class GameService {
       promises: updatedPromises,
       roles: updatedRoles,
     };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  revealSecret(roleId: number): GameState | null {
-    const state = this.getState();
+  /**
+   * Reveal role secret.
+   */
+  async revealSecret(sessionCode: string, roleId: number): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedRoles = state.roles.map((r) =>
@@ -323,25 +391,30 @@ export class GameService {
     );
 
     const updatedState: GameState = { ...state, roles: updatedRoles };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
-  resetSession(): GameState {
-    return this.repository.createSession(nanoid(12));
+  /**
+   * Reset session - clears state and re-initializes.
+   */
+  async resetSession(sessionCode: string, playerCount: number): Promise<GameState | null> {
+    await this.repository.clearSessionState(sessionCode);
+    return this.repository.initializeSession(sessionCode, playerCount);
   }
 
   // ============ PLAYER RESOURCES ============
 
   /**
-   * Обновить ресурс игрока (установить абсолютное значение).
+   * Update player resource (set absolute value).
    */
-  updatePlayerResource(
+  async updatePlayerResource(
+    sessionCode: string,
     roleId: number,
     resource: ResourceName,
     amount: number
-  ): GameState | null {
-    const state = this.getState();
+  ): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedRoles = state.roles.map((role) =>
@@ -357,39 +430,40 @@ export class GameService {
     );
 
     const updatedState: GameState = { ...state, roles: updatedRoles };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
   /**
-   * Добавить ресурсы игроку (инкремент).
+   * Give resources to player (increment).
    */
-  givePlayerResource(
+  async givePlayerResource(
+    sessionCode: string,
     roleId: number,
     resource: ResourceName,
     amount: number
-  ): GameState | null {
-    const state = this.getState();
+  ): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const role = state.roles.find((r) => r.id === roleId);
     if (!role) return null;
 
     const currentAmount = role.resources[resource];
-    return this.updatePlayerResource(roleId, resource, currentAmount + amount);
+    return this.updatePlayerResource(sessionCode, roleId, resource, currentAmount + amount);
   }
 
   /**
-   * Игрок вносит ресурсы в зону.
-   * Списывает из личного пула игрока, добавляет в пул зоны.
+   * Player contributes resources to zone.
    */
-  contributeToZone(
+  async contributeToZone(
+    sessionCode: string,
     roleId: number,
     zone: ZoneName,
     resource: ResourceName,
     amount: number
-  ): { success: boolean; error?: string; state?: GameState } {
-    const state = this.getState();
+  ): Promise<{ success: boolean; error?: string; state?: GameState }> {
+    const state = await this.getState(sessionCode);
     if (!state) return { success: false, error: 'Нет активной сессии' };
 
     if (zone === 'unknown') {
@@ -411,7 +485,7 @@ export class GameService {
       return { success: false, error: 'Зона не поддерживает ресурсы' };
     }
 
-    // Списываем у игрока
+    // Subtract from player
     const updatedRoles = state.roles.map((r) =>
       r.id === roleId
         ? {
@@ -424,7 +498,7 @@ export class GameService {
         : r
     );
 
-    // Добавляем в зону
+    // Add to zone
     const updatedZones = {
       ...state.zones,
       [zone]: {
@@ -441,15 +515,15 @@ export class GameService {
       roles: updatedRoles,
       zones: updatedZones,
     };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return { success: true, state: updatedState };
   }
 
   /**
-   * Улучшить зону с автоматической проверкой и списанием ресурсов.
+   * Upgrade zone with automatic resource validation.
    */
-  upgradeZone(zone: ZoneName): UpgradeResult & { state?: GameState } {
-    const state = this.getState();
+  async upgradeZone(sessionCode: string, zone: ZoneName): Promise<UpgradeResult & { state?: GameState }> {
+    const state = await this.getState(sessionCode);
     if (!state) return { success: false, error: 'Нет активной сессии' };
 
     if (zone === 'unknown') {
@@ -470,7 +544,7 @@ export class GameService {
       return { success: false, error: 'Недостаточно ресурсов в пуле зоны' };
     }
 
-    // Списываем ресурсы и повышаем уровень
+    // Subtract resources and increase level
     const newResources = subtractCost(currentZone.resources, cost);
     const newLevel = currentZone.level + 1;
 
@@ -484,22 +558,24 @@ export class GameService {
     };
 
     const updatedState: GameState = { ...state, zones: updatedZones };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return { success: true, newLevel, state: updatedState };
   }
 
   // ============ GAME SETUP & CONFIGURATION ============
 
   /**
-   * Настройка игры перед началом.
-   * Активирует нужное количество ролей по приоритету.
+   * Configure game before start.
    */
-  configureGame(config: {
-    playerCount: number;
-    difficulty: Difficulty;
-    distributionMode: DistributionMode;
-  }): GameState | null {
-    const state = this.getState();
+  async configureGame(
+    sessionCode: string,
+    config: {
+      playerCount: number;
+      difficulty: Difficulty;
+      distributionMode: DistributionMode;
+    }
+  ): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const activeRoleIds = getActiveRoleIds(config.playerCount);
@@ -525,18 +601,19 @@ export class GameService {
       settings: updatedSettings,
     };
 
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
   /**
-   * Игрок занимает роль (для онлайн-распределения).
+   * Player claims a role (for online distribution).
    */
-  claimRole(
+  async claimRole(
+    sessionCode: string,
     roleId: number,
     playerName: string
-  ): { success: boolean; error?: string; state?: GameState; token?: string } {
-    const state = this.getState();
+  ): Promise<{ success: boolean; error?: string; state?: GameState; token?: string }> {
+    const state = await this.getState(sessionCode);
     if (!state) return { success: false, error: 'Нет активной сессии' };
 
     if (state.settings.gamePhase !== 'distribution') {
@@ -561,16 +638,16 @@ export class GameService {
     );
 
     const updatedState: GameState = { ...state, roles: updatedRoles };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
 
     return { success: true, state: updatedState, token: role.token };
   }
 
   /**
-   * Освободить роль (админ может снять игрока).
+   * Unclaim role (admin can remove player).
    */
-  unclaimRole(roleId: number): GameState | null {
-    const state = this.getState();
+  async unclaimRole(sessionCode: string, roleId: number): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedRoles = state.roles.map((r) =>
@@ -578,15 +655,15 @@ export class GameService {
     );
 
     const updatedState: GameState = { ...state, roles: updatedRoles };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
   /**
-   * Проверить готовность к старту (все активные роли заняты).
+   * Check if all active roles are claimed.
    */
-  isReadyToStart(): boolean {
-    const state = this.getState();
+  async isReadyToStart(sessionCode: string): Promise<boolean> {
+    const state = await this.getState(sessionCode);
     if (!state) return false;
 
     const activeRoles = state.roles.filter((r) => r.isActive);
@@ -594,10 +671,10 @@ export class GameService {
   }
 
   /**
-   * Получить список свободных ролей.
+   * Get list of available roles.
    */
-  getAvailableRoles(): Array<{ id: number; name: string; isActive: boolean; claimedBy: string | null }> {
-    const state = this.getState();
+  async getAvailableRoles(sessionCode: string): Promise<Array<{ id: number; name: string; isActive: boolean; claimedBy: string | null }>> {
+    const state = await this.getState(sessionCode);
     if (!state) return [];
 
     return state.roles
@@ -611,17 +688,17 @@ export class GameService {
   }
 
   /**
-   * Начать игру — раздать ресурсы и перейти в фазу playing.
+   * Start game - distribute resources and switch to playing phase.
    */
-  startGame(): { success: boolean; error?: string; state?: GameState } {
-    const state = this.getState();
+  async startGame(sessionCode: string): Promise<{ success: boolean; error?: string; state?: GameState }> {
+    const state = await this.getState(sessionCode);
     if (!state) return { success: false, error: 'Нет активной сессии' };
 
     if (state.settings.gamePhase !== 'distribution') {
       return { success: false, error: 'Игра не в фазе распределения' };
     }
 
-    // Для онлайн-распределения все роли должны быть заняты
+    // For online distribution, all roles must be claimed
     if (state.settings.distributionMode === 'online') {
       const activeRoles = state.roles.filter((r) => r.isActive);
       const unclaimedRoles = activeRoles.filter((r) => r.claimedBy === null);
@@ -633,7 +710,7 @@ export class GameService {
       }
     }
 
-    // Раздаём ресурсы если не manual режим
+    // Distribute resources if not manual mode
     let updatedRoles = state.roles;
     if (state.settings.difficulty !== 'manual') {
       const resources = calculateDistributedResources(
@@ -659,15 +736,15 @@ export class GameService {
       settings: updatedSettings,
     };
 
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return { success: true, state: updatedState };
   }
 
   /**
-   * Завершить игру.
+   * Finish game.
    */
-  finishGame(): GameState | null {
-    const state = this.getState();
+  async finishGame(sessionCode: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedSettings: GameSettings = {
@@ -676,15 +753,15 @@ export class GameService {
     };
 
     const updatedState: GameState = { ...state, settings: updatedSettings };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
   /**
-   * Обновить фазу игры.
+   * Set game phase.
    */
-  setGamePhase(phase: GamePhase): GameState | null {
-    const state = this.getState();
+  async setGamePhase(sessionCode: string, phase: GamePhase): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedSettings: GameSettings = {
@@ -693,16 +770,15 @@ export class GameService {
     };
 
     const updatedState: GameState = { ...state, settings: updatedSettings };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
   /**
-   * Получить лобби-токен для онлайн-распределения.
-   * Это просто sessionId, который используется как идентификатор лобби.
+   * Get lobby token for online distribution.
    */
-  getLobbyToken(): string | null {
-    const state = this.getState();
+  async getLobbyToken(sessionCode: string): Promise<string | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
     return state.sessionId;
   }
@@ -710,14 +786,17 @@ export class GameService {
   // ============ EVENT SYSTEM ============
 
   /**
-   * Обновить настройки событий.
+   * Update event settings.
    */
-  updateEventSettings(settings: {
-    enabled?: boolean;
-    probability?: number;
-    enabledEventIds?: number[];
-  }): GameState | null {
-    const state = this.getState();
+  async updateEventSettings(
+    sessionCode: string,
+    settings: {
+      enabled?: boolean;
+      probability?: number;
+      enabledEventIds?: number[];
+    }
+  ): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedSettings: GameSettings = {
@@ -731,20 +810,20 @@ export class GameService {
     };
 
     const updatedState: GameState = { ...state, settings: updatedSettings };
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
   /**
-   * Запустить событие (показать игрокам).
+   * Trigger event (show to players).
    */
-  triggerEvent(eventId: number): GameState | null {
-    const state = this.getState();
+  async triggerEvent(sessionCode: string, eventId: number): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
-    // Проверить что событие ещё не было запущено
+    // Check if event was already triggered
     if (state.triggeredEvents.some((e) => e.eventId === eventId)) {
-      return null; // Событие уже было
+      return null;
     }
 
     const updatedState: GameState = {
@@ -752,7 +831,7 @@ export class GameService {
       activeEvent: {
         eventId,
         showingToPlayers: true,
-        awaitingChoice: false, // Будет true для dilemma событий
+        awaitingChoice: false,
       },
       triggeredEvents: [
         ...state.triggeredEvents,
@@ -765,15 +844,15 @@ export class GameService {
       ],
     };
 
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
   /**
-   * Запустить событие с выбором (dilemma).
+   * Trigger dilemma event (with choice).
    */
-  triggerDilemmaEvent(eventId: number): GameState | null {
-    const state = this.getState();
+  async triggerDilemmaEvent(sessionCode: string, eventId: number): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     if (state.triggeredEvents.some((e) => e.eventId === eventId)) {
@@ -798,15 +877,15 @@ export class GameService {
       ],
     };
 
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
   /**
-   * Скрыть активное событие.
+   * Dismiss active event.
    */
-  dismissEvent(): GameState | null {
-    const state = this.getState();
+  async dismissEvent(sessionCode: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedState: GameState = {
@@ -814,19 +893,20 @@ export class GameService {
       activeEvent: null,
     };
 
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
   /**
-   * Применить эффект события (ресурсы).
+   * Apply event effect (resources).
    */
-  applyEventEffect(
+  async applyEventEffect(
+    sessionCode: string,
     resourceType: ResourceName | 'all',
     amount: number,
     targetZone: ZoneName | 'all'
-  ): GameState | null {
-    const state = this.getState();
+  ): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const zonesToUpdate: Array<Exclude<ZoneName, 'unknown'>> =
@@ -868,15 +948,15 @@ export class GameService {
       zones: updatedZones,
     };
 
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
   /**
-   * Записать выбор для события-дилеммы.
+   * Record dilemma choice.
    */
-  recordEventChoice(eventId: number, choiceText: string): GameState | null {
-    const state = this.getState();
+  async recordEventChoice(sessionCode: string, eventId: number, choiceText: string): Promise<GameState | null> {
+    const state = await this.getState(sessionCode);
     if (!state) return null;
 
     const updatedTriggeredEvents = state.triggeredEvents.map((e) =>
@@ -886,25 +966,23 @@ export class GameService {
     const updatedState: GameState = {
       ...state,
       triggeredEvents: updatedTriggeredEvents,
-      activeEvent: null, // Закрываем событие после выбора
+      activeEvent: null,
     };
 
-    this.repository.save(updatedState);
+    await this.repository.saveSessionState(sessionCode, updatedState);
     return updatedState;
   }
 
   /**
-   * Получить список доступных событий для текущего акта.
-   * Возвращает eventIds которые: включены, подходят по стадии, ещё не запускались.
+   * Get available events for current act.
    */
-  getAvailableEvents(): number[] {
-    const state = this.getState();
+  async getAvailableEvents(sessionCode: string): Promise<number[]> {
+    const state = await this.getState(sessionCode);
     if (!state) return [];
 
     const { enabledEventIds } = state.settings.eventSettings;
     const triggeredIds = state.triggeredEvents.map((e) => e.eventId);
 
-    // Фильтруем: включённые, не запущенные
     return enabledEventIds.filter((id) => !triggeredIds.includes(id));
   }
 }

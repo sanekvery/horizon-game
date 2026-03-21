@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import QRCode from 'qrcode';
 import rolesData from '../data/roles.json';
@@ -10,18 +10,20 @@ interface QRCardProps {
   archetype: string;
   token: string;
   baseUrl: string;
+  sessionCode?: string;
   isLobby?: boolean;
 }
 
-function QRCard({ name, archetype, token, baseUrl, isLobby = false }: QRCardProps) {
+function QRCard({ name, archetype, token, baseUrl, sessionCode, isLobby = false }: QRCardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     if (canvasRef.current) {
+      const sessionParam = sessionCode ? `?session=${sessionCode}` : '';
       const url = isLobby
-        ? `${baseUrl}/lobby`
-        : `${baseUrl}/join/${token}`;
+        ? `${baseUrl}/lobby${sessionParam}`
+        : `${baseUrl}/join/${token}${sessionParam}`;
       QRCode.toCanvas(canvasRef.current, url, {
         width: isLobby ? 240 : 160,
         margin: 1,
@@ -31,9 +33,10 @@ function QRCard({ name, archetype, token, baseUrl, isLobby = false }: QRCardProp
         },
       }).catch(() => setError(true));
     }
-  }, [baseUrl, token, isLobby]);
+  }, [baseUrl, token, sessionCode, isLobby]);
 
-  const url = isLobby ? `${baseUrl}/lobby` : `${baseUrl}/join/${token}`;
+  const sessionParam = sessionCode ? `?session=${sessionCode}` : '';
+  const url = isLobby ? `${baseUrl}/lobby${sessionParam}` : `${baseUrl}/join/${token}${sessionParam}`;
 
   if (isLobby) {
     return (
@@ -82,7 +85,12 @@ function QRCard({ name, archetype, token, baseUrl, isLobby = false }: QRCardProp
 
 export function QRCodesPage() {
   const navigate = useNavigate();
-  const { state, isConnected, isAdmin, startGame } = useGameState();
+  const [searchParams] = useSearchParams();
+  const sessionCode = searchParams.get('session');
+
+  const { state, isConnected, isSessionJoined, isAdmin, startGame } = useGameState({
+    sessionCode,
+  });
   const [baseUrl, setBaseUrl] = useState('');
   const [showAll, setShowAll] = useState(false);
 
@@ -90,10 +98,25 @@ export function QRCodesPage() {
     setBaseUrl(window.location.origin);
   }, []);
 
-  if (!isConnected) {
+  if (!sessionCode) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-        <div className="text-gray-500 text-xl animate-pulse">Подключение...</div>
+        <div className="text-center">
+          <div className="text-red-500 text-xl mb-4">No session code provided</div>
+          <a href="/facilitator" className="text-[#D4A017] hover:underline">
+            Go to Facilitator Dashboard
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isConnected || !isSessionJoined) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-gray-500 text-xl animate-pulse">
+          {!isConnected ? 'Подключение...' : 'Присоединение к сессии...'}
+        </div>
       </div>
     );
   }
@@ -139,7 +162,7 @@ export function QRCodesPage() {
         {/* Actions */}
         <div className="mt-4 flex justify-center gap-3 print:hidden">
           <button
-            onClick={() => navigate('/setup')}
+            onClick={() => navigate(`/setup?session=${sessionCode}`)}
             className="px-4 py-2 bg-[#778DA9] hover:bg-[#415A77] text-white rounded-lg transition-colors"
           >
             ← Настройки
@@ -174,6 +197,7 @@ export function QRCodesPage() {
             archetype="Сканируйте, чтобы выбрать роль"
             token=""
             baseUrl={baseUrl}
+            sessionCode={sessionCode}
             isLobby={true}
           />
 
@@ -241,6 +265,7 @@ export function QRCodesPage() {
                     archetype={roleData?.archetype || ''}
                     token={role.token}
                     baseUrl={baseUrl}
+                    sessionCode={sessionCode}
                   />
                   {role.claimedBy && (
                     <div className="mt-2 text-center text-sm text-[#D4A017] font-medium">

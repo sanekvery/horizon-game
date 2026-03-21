@@ -3,11 +3,17 @@ import { useSocket } from './useSocket';
 import type { GameState, ZoneName, ResourceName, Difficulty, DistributionMode, GamePhase } from '../types/game-state';
 import { authApi } from '../services/auth-api';
 
+interface UseGameStateOptions {
+  sessionCode?: string | null;
+}
+
 interface UseGameStateReturn {
   state: GameState | null;
   isConnected: boolean;
+  isSessionJoined: boolean;
   isLoading: boolean;
   error: string | null;
+  sessionCode: string | null;
 
   // Player actions
   joinAsPlayer: (token: string) => void;
@@ -48,12 +54,20 @@ interface UseGameStateReturn {
   dismissEvent: () => void;
   applyEventEffect: (resource: ResourceName | 'all', amount: number, zone: ZoneName | 'all') => void;
   recordEventChoice: (eventId: number, choice: string) => void;
+
+  // Session management
+  joinSession: (code: string) => void;
 }
 
 const ADMIN_PASSWORD_KEY = 'horizon_admin_password';
 
-export function useGameState(): UseGameStateReturn {
-  const { isConnected, emit, on, off } = useSocket();
+export function useGameState(options: UseGameStateOptions = {}): UseGameStateReturn {
+  const { sessionCode: initialSessionCode } = options;
+
+  const { isConnected, isSessionJoined, sessionCode, emit, on, off, joinSession } = useSocket({
+    sessionCode: initialSessionCode,
+  });
+
   const [state, setState] = useState<GameState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -88,9 +102,9 @@ export function useGameState(): UseGameStateReturn {
     };
   }, [on, off]);
 
-  // Запросить состояние при подключении и авто-авторизация админа
+  // Request state when session is joined and auto-authenticate admin
   useEffect(() => {
-    if (isConnected) {
+    if (isConnected && isSessionJoined) {
       emit('request:state');
 
       // Auto-authenticate: try JWT token first, then saved password
@@ -108,7 +122,7 @@ export function useGameState(): UseGameStateReturn {
         }
       }
     }
-  }, [isConnected, emit, isAdmin]);
+  }, [isConnected, isSessionJoined, emit, isAdmin]);
 
   // Player actions
   const joinAsPlayer = useCallback((token: string) => {
@@ -274,8 +288,10 @@ export function useGameState(): UseGameStateReturn {
   return {
     state,
     isConnected,
+    isSessionJoined,
     isLoading,
     error,
+    sessionCode,
     joinAsPlayer,
     castVote,
     setPromise,
@@ -310,5 +326,6 @@ export function useGameState(): UseGameStateReturn {
     dismissEvent,
     applyEventEffect,
     recordEventChoice,
+    joinSession,
   };
 }

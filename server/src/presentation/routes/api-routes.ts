@@ -5,9 +5,18 @@ import { appConfig } from '../../infrastructure/config/index.js';
 export function createApiRoutes(gameService: GameService): Router {
   const router = Router();
 
-  // Get current game state
-  router.get('/state', (_req, res) => {
-    const state = gameService.getState();
+  /**
+   * Get current game state for a session.
+   * Query param: ?session=CODE
+   */
+  router.get('/state', async (req, res) => {
+    const sessionCode = req.query.session as string;
+    if (!sessionCode) {
+      res.status(400).json({ error: 'Session code required (?session=CODE)' });
+      return;
+    }
+
+    const state = await gameService.getState(sessionCode);
     if (!state) {
       res.status(404).json({ error: 'Сессия не найдена' });
       return;
@@ -15,9 +24,18 @@ export function createApiRoutes(gameService: GameService): Router {
     res.json(state);
   });
 
-  // Validate player token
-  router.get('/validate-token/:token', (req, res) => {
-    const role = gameService.getRoleByToken(req.params.token);
+  /**
+   * Validate player token within a session.
+   * Query param: ?session=CODE
+   */
+  router.get('/validate-token/:token', async (req, res) => {
+    const sessionCode = req.query.session as string;
+    if (!sessionCode) {
+      res.status(400).json({ valid: false, error: 'Session code required' });
+      return;
+    }
+
+    const role = await gameService.getRoleByToken(sessionCode, req.params.token);
     if (!role) {
       res.status(404).json({ valid: false, error: 'Неверный токен' });
       return;
@@ -25,7 +43,9 @@ export function createApiRoutes(gameService: GameService): Router {
     res.json({ valid: true, role: { id: role.id, name: role.name } });
   });
 
-  // Admin authentication
+  /**
+   * Admin authentication (legacy password-based).
+   */
   router.post('/admin/auth', (req, res) => {
     const { password } = req.body as { password?: string };
     if (password === appConfig.adminPassword) {
@@ -35,15 +55,24 @@ export function createApiRoutes(gameService: GameService): Router {
     }
   });
 
-  // Get all roles (for admin)
-  router.get('/admin/roles', (req, res) => {
+  /**
+   * Get all roles for admin.
+   * Query param: ?session=CODE
+   */
+  router.get('/admin/roles', async (req, res) => {
     const authHeader = req.headers.authorization;
     if (authHeader !== `Bearer ${appConfig.adminPassword}`) {
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
 
-    const state = gameService.getState();
+    const sessionCode = req.query.session as string;
+    if (!sessionCode) {
+      res.status(400).json({ error: 'Session code required' });
+      return;
+    }
+
+    const state = await gameService.getState(sessionCode);
     if (!state) {
       res.status(404).json({ error: 'Сессия не найдена' });
       return;
@@ -52,9 +81,18 @@ export function createApiRoutes(gameService: GameService): Router {
     res.json(state.roles);
   });
 
-  // Get lobby info (available roles for online distribution)
-  router.get('/lobby', (_req, res) => {
-    const state = gameService.getState();
+  /**
+   * Get lobby info (available roles for online distribution).
+   * Query param: ?session=CODE
+   */
+  router.get('/lobby', async (req, res) => {
+    const sessionCode = req.query.session as string;
+    if (!sessionCode) {
+      res.status(400).json({ error: 'Session code required (?session=CODE)' });
+      return;
+    }
+
+    const state = await gameService.getState(sessionCode);
     if (!state) {
       res.status(404).json({ error: 'Сессия не найдена' });
       return;
@@ -65,7 +103,7 @@ export function createApiRoutes(gameService: GameService): Router {
       return;
     }
 
-    const availableRoles = gameService.getAvailableRoles();
+    const availableRoles = await gameService.getAvailableRoles(sessionCode);
     const allActiveRoles = state.roles
       .filter((r) => r.isActive)
       .map((r) => ({
@@ -76,6 +114,7 @@ export function createApiRoutes(gameService: GameService): Router {
 
     res.json({
       sessionId: state.sessionId,
+      sessionCode,
       phase: state.settings.gamePhase,
       playerCount: state.settings.playerCount,
       difficulty: state.settings.difficulty,
@@ -86,8 +125,17 @@ export function createApiRoutes(gameService: GameService): Router {
     });
   });
 
-  // Claim role (for online distribution)
-  router.post('/claim-role', (req, res) => {
+  /**
+   * Claim role (for online distribution).
+   * Query param: ?session=CODE
+   */
+  router.post('/claim-role', async (req, res) => {
+    const sessionCode = req.query.session as string;
+    if (!sessionCode) {
+      res.status(400).json({ error: 'Session code required' });
+      return;
+    }
+
     const { roleId, playerName } = req.body as { roleId?: number; playerName?: string };
 
     if (!roleId || !playerName) {
@@ -95,7 +143,7 @@ export function createApiRoutes(gameService: GameService): Router {
       return;
     }
 
-    const result = gameService.claimRole(roleId, playerName.trim());
+    const result = await gameService.claimRole(sessionCode, roleId, playerName.trim());
     if (result.success) {
       res.json({ success: true, token: result.token });
     } else {
@@ -103,15 +151,45 @@ export function createApiRoutes(gameService: GameService): Router {
     }
   });
 
-  // Get game settings
-  router.get('/settings', (_req, res) => {
-    const state = gameService.getState();
+  /**
+   * Get game settings for a session.
+   * Query param: ?session=CODE
+   */
+  router.get('/settings', async (req, res) => {
+    const sessionCode = req.query.session as string;
+    if (!sessionCode) {
+      res.status(400).json({ error: 'Session code required' });
+      return;
+    }
+
+    const state = await gameService.getState(sessionCode);
     if (!state) {
       res.status(404).json({ error: 'Сессия не найдена' });
       return;
     }
 
     res.json(state.settings);
+  });
+
+  /**
+   * Initialize game state for a session (creates initial state if not exists).
+   * Called when admin opens a session for the first time.
+   */
+  router.post('/init-session', async (req, res) => {
+    const { sessionCode, playerCount } = req.body as { sessionCode?: string; playerCount?: number };
+
+    if (!sessionCode || !playerCount) {
+      res.status(400).json({ error: 'Требуется sessionCode и playerCount' });
+      return;
+    }
+
+    const state = await gameService.getOrCreateSession(sessionCode, playerCount);
+    if (!state) {
+      res.status(404).json({ error: 'Сессия не найдена в базе данных' });
+      return;
+    }
+
+    res.json({ success: true, sessionId: state.sessionId });
   });
 
   return router;

@@ -2,6 +2,65 @@
 
 ---
 
+## Фаза 2: Мультисессионность (завершено)
+
+**Дата:** 2026-03-21
+
+### Что сделано
+- ✅ Игровое состояние хранится в PostgreSQL (`game_sessions.state`)
+- ✅ WebSocket rooms изолированы по sessionCode (`session:{code}`)
+- ✅ Per-session таймеры (Map<sessionCode, NodeJS.Timeout>)
+- ✅ Все GameService методы переведены на async + sessionCode
+- ✅ API `/api/init-session` для инициализации состояния игры
+- ✅ Все клиентские страницы передают sessionCode между собой
+- ✅ QR-коды содержат параметр `?session=CODE`
+
+### Затронутые файлы
+
+**Server:**
+- `prisma-game-state-repository.ts` — НОВЫЙ: репозиторий для PostgreSQL
+- `game-service.ts` — все 50+ методов теперь async с sessionCode
+- `socket-handler.ts` — session rooms, per-session timers, broadcastState(sessionCode)
+- `api-routes.ts` — все endpoints принимают ?session=CODE
+- `index.ts` — использует PrismaGameStateRepository
+
+**Client:**
+- `useSocket.ts` — auto-join session, isSessionJoined
+- `useGameState.ts` — sessionCode awareness
+- `AdminDashboard.tsx` — инициализация сессии через API
+- `GameSetup.tsx` — sessionCode из URL
+- `QRCodesPage.tsx` — sessionCode в QR URL
+- `MobilePlayer.tsx` — sessionCode из URL params
+- `RoleLobby.tsx` — sessionCode + навигация с параметром
+- `MapProjection.tsx` — sessionCode из URL
+
+### Архитектура
+```
+┌─────────────┐     ┌──────────────────────────────┐
+│  Client A   │────▶│  WebSocket Room: session:ABC │
+│  (Game 1)   │     │  State: PostgreSQL (ABC)     │
+├─────────────┤     ├──────────────────────────────┤
+│  Client B   │────▶│  WebSocket Room: session:XYZ │
+│  (Game 2)   │     │  State: PostgreSQL (XYZ)     │
+└─────────────┘     └──────────────────────────────┘
+```
+
+### Что проверить
+1. Создать две игры от одного фасилитатора
+2. Открыть админку Game A в одном браузере
+3. Открыть админку Game B в другом браузере
+4. Изменить состояние в Game A → Game B НЕ должен измениться
+5. Запустить таймер в Game A → в Game B таймер НЕ запускается
+6. Игроки Game A видят только своё состояние
+7. Игроки Game B видят только своё состояние
+
+### Breaking Changes
+- ⚠️ SQLite больше не используется для игрового состояния
+- ⚠️ Все API endpoints требуют параметр `?session=CODE`
+- ⚠️ GameService методы теперь async (возвращают Promise)
+
+---
+
 ## Фаза 1.1: Авторизация фасилитаторов (завершено)
 
 **Дата:** 2024-03-20
@@ -70,12 +129,7 @@
 
 ## Бэклог (будущие фазы)
 
-### Фаза 2: Мультисессионность
-- Несколько игр одновременно
-- Изоляция WebSocket по сессиям
-- Каждая сессия — своё состояние
-
-### Фаза 3: Логирование
+### Фаза 3: Логирование (СЛЕДУЮЩИЙ ШАГ)
 - Запись всех действий в БД
 - История сессий
 - Аналитика

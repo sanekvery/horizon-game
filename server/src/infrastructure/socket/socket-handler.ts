@@ -6,37 +6,55 @@ import { authService } from '../../application/services/auth-service.js';
 interface SocketData {
   token?: string;
   isAdmin?: boolean;
+  sessionCode?: string;
 }
 
+/**
+ * Session-aware socket handler with isolated WebSocket rooms.
+ * Each session has its own room: `session:{sessionCode}`
+ */
 export function setupSocketHandlers(io: Server, gameService: GameService): void {
-  let timerInterval: NodeJS.Timeout | null = null;
+  // Per-session timers (Map: sessionCode -> interval)
+  const sessionTimers = new Map<string, NodeJS.Timeout>();
 
-  const broadcastState = () => {
-    const state = gameService.getState();
+  /**
+   * Broadcast state to all clients in a specific session room.
+   */
+  const broadcastState = async (sessionCode: string) => {
+    const state = await gameService.getState(sessionCode);
     if (state) {
-      io.emit('game:state', state);
+      io.to(`session:${sessionCode}`).emit('game:state', state);
     }
   };
 
-  const startTimerInterval = () => {
-    if (timerInterval) return;
+  /**
+   * Start timer interval for a specific session.
+   */
+  const startTimerInterval = (sessionCode: string) => {
+    if (sessionTimers.has(sessionCode)) return;
 
-    timerInterval = setInterval(() => {
-      const state = gameService.tickTimer();
+    const interval = setInterval(async () => {
+      const state = await gameService.tickTimer(sessionCode);
       if (state) {
-        io.emit('game:state', state);
+        io.to(`session:${sessionCode}`).emit('game:state', state);
         if (!state.timer.running) {
-          stopTimerInterval();
-          io.emit('game:timer-ended');
+          stopTimerInterval(sessionCode);
+          io.to(`session:${sessionCode}`).emit('game:timer-ended');
         }
       }
     }, 1000);
+
+    sessionTimers.set(sessionCode, interval);
   };
 
-  const stopTimerInterval = () => {
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      timerInterval = null;
+  /**
+   * Stop timer interval for a specific session.
+   */
+  const stopTimerInterval = (sessionCode: string) => {
+    const interval = sessionTimers.get(sessionCode);
+    if (interval) {
+      clearInterval(interval);
+      sessionTimers.delete(sessionCode);
     }
   };
 
@@ -44,23 +62,61 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
     const data = socket.data as SocketData;
     console.log(`Client connected: ${socket.id}`);
 
-    // Send current state on connection
-    const state = gameService.getState();
-    if (state) {
-      socket.emit('game:state', state);
-    }
+    // ============ SESSION MANAGEMENT ============
 
-    // Handle state request (fix race condition)
-    socket.on('request:state', () => {
-      const currentState = gameService.getState();
+    /**
+     * Join a session room and receive initial state.
+     * Must be called before any other session-specific actions.
+     */
+    socket.on('join:session', async (sessionCode: string) => {
+      if (!sessionCode) {
+        socket.emit('session:error', { message: 'Session code required' });
+        return;
+      }
+
+      // Leave previous session room if any
+      if (data.sessionCode) {
+        socket.leave(`session:${data.sessionCode}`);
+      }
+
+      data.sessionCode = sessionCode;
+      socket.join(`session:${sessionCode}`);
+      console.log(`Socket ${socket.id} joined session: ${sessionCode}`);
+
+      // Send current state for this session
+      const state = await gameService.getState(sessionCode);
+      if (state) {
+        socket.emit('game:state', state);
+      }
+    });
+
+    /**
+     * Request current state for the joined session.
+     */
+    socket.on('request:state', async () => {
+      if (!data.sessionCode) {
+        socket.emit('session:error', { message: 'Not joined to a session' });
+        return;
+      }
+
+      const currentState = await gameService.getState(data.sessionCode);
       if (currentState) {
         socket.emit('game:state', currentState);
       }
     });
 
-    // Player joins with token
-    socket.on('player:join', (token: string) => {
-      const role = gameService.getRoleByToken(token);
+    // ============ PLAYER ACTIONS ============
+
+    /**
+     * Player joins with token.
+     */
+    socket.on('player:join', async (token: string) => {
+      if (!data.sessionCode) {
+        socket.emit('player:error', { message: 'Session not joined' });
+        return;
+      }
+
+      const role = await gameService.getRoleByToken(data.sessionCode, token);
       if (!role) {
         socket.emit('player:error', { message: 'Неверный токен' });
         return;
@@ -68,22 +124,102 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
 
       data.token = token;
       socket.join(`player:${role.id}`);
-      gameService.connectPlayer(token);
-      broadcastState();
+      await gameService.connectPlayer(data.sessionCode, token);
+      await broadcastState(data.sessionCode);
 
       socket.emit('player:joined', { role });
     });
 
-    // Admin authentication (password or JWT token)
+    /**
+     * Player claims a role (for online distribution).
+     */
+    socket.on(
+      'player:claim-role',
+      async ({ roleId, playerName }: { roleId: number; playerName: string }) => {
+        if (!data.sessionCode) {
+          socket.emit('player:error', { message: 'Session not joined' });
+          return;
+        }
+
+        const result = await gameService.claimRole(data.sessionCode, roleId, playerName);
+        if (result.success && result.token) {
+          data.token = result.token;
+          socket.join(`player:${roleId}`);
+          await broadcastState(data.sessionCode);
+          socket.emit('player:claim-success', { roleId, token: result.token });
+        } else {
+          socket.emit('player:claim-error', { error: result.error });
+        }
+      }
+    );
+
+    /**
+     * Player votes.
+     */
+    socket.on('player:vote', async ({ voteId, optionId }: { voteId: string; optionId: string }) => {
+      if (!data.token || !data.sessionCode) return;
+      await gameService.castVote(data.sessionCode, voteId, optionId);
+      await broadcastState(data.sessionCode);
+    });
+
+    /**
+     * Player sets promise.
+     */
+    socket.on(
+      'player:set-promise',
+      async ({ text, deadline }: { text: string; deadline: string }) => {
+        if (!data.token || !data.sessionCode) return;
+        const role = await gameService.getRoleByToken(data.sessionCode, data.token);
+        if (role) {
+          await gameService.setPromise(data.sessionCode, role.id, text, deadline);
+          await broadcastState(data.sessionCode);
+        }
+      }
+    );
+
+    /**
+     * Player contributes resources to zone.
+     */
+    socket.on(
+      'player:contribute',
+      async ({
+        zone,
+        resource,
+        amount,
+      }: {
+        zone: ZoneName;
+        resource: ResourceName;
+        amount: number;
+      }) => {
+        if (!data.token || !data.sessionCode) return;
+        const role = await gameService.getRoleByToken(data.sessionCode, data.token);
+        if (!role) return;
+
+        const result = await gameService.contributeToZone(data.sessionCode, role.id, zone, resource, amount);
+        if (result.success) {
+          await broadcastState(data.sessionCode);
+          socket.emit('player:contribute-success', { zone, resource, amount });
+        } else {
+          socket.emit('player:contribute-error', { error: result.error });
+        }
+      }
+    );
+
+    // ============ ADMIN AUTHENTICATION ============
+
+    /**
+     * Admin authentication (JWT token or password).
+     */
     socket.on('admin:auth', async (credential: string) => {
       // First try JWT token authentication
       const jwtPayload = await authService.verifyToken(credential);
       if (jwtPayload) {
-        // Valid JWT token - user is authenticated facilitator
         data.isAdmin = true;
         socket.join('admins');
         socket.emit('admin:authenticated');
-        broadcastState();
+        if (data.sessionCode) {
+          await broadcastState(data.sessionCode);
+        }
         return;
       }
 
@@ -93,51 +229,54 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
         data.isAdmin = true;
         socket.join('admins');
         socket.emit('admin:authenticated');
-        broadcastState();
+        if (data.sessionCode) {
+          await broadcastState(data.sessionCode);
+        }
       } else {
         socket.emit('admin:error', { message: 'Неверный пароль' });
       }
     });
 
-    // Admin commands
-    socket.on('admin:set-act', (act: 1 | 2 | 3 | 4 | 5) => {
-      if (!data.isAdmin) return;
-      gameService.setAct(act);
-      broadcastState();
+    // ============ ADMIN COMMANDS ============
+
+    socket.on('admin:set-act', async (act: 1 | 2 | 3 | 4 | 5) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.setAct(data.sessionCode, act);
+      await broadcastState(data.sessionCode);
     });
 
-    socket.on('admin:set-scene', (scene: number) => {
-      if (!data.isAdmin) return;
-      gameService.setScene(scene);
-      broadcastState();
+    socket.on('admin:set-scene', async (scene: number) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.setScene(data.sessionCode, scene);
+      await broadcastState(data.sessionCode);
     });
 
-    socket.on('admin:start-timer', (seconds: number) => {
-      if (!data.isAdmin) return;
-      gameService.startTimer(seconds);
-      startTimerInterval();
-      broadcastState();
+    socket.on('admin:start-timer', async (seconds: number) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.startTimer(data.sessionCode, seconds);
+      startTimerInterval(data.sessionCode);
+      await broadcastState(data.sessionCode);
     });
 
-    socket.on('admin:stop-timer', () => {
-      if (!data.isAdmin) return;
-      stopTimerInterval();
-      gameService.stopTimer();
-      broadcastState();
+    socket.on('admin:stop-timer', async () => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      stopTimerInterval(data.sessionCode);
+      await gameService.stopTimer(data.sessionCode);
+      await broadcastState(data.sessionCode);
     });
 
     socket.on(
       'admin:update-zone-level',
-      ({ zone, level }: { zone: ZoneName; level: number }) => {
-        if (!data.isAdmin) return;
-        gameService.updateZoneLevel(zone, level);
-        broadcastState();
+      async ({ zone, level }: { zone: ZoneName; level: number }) => {
+        if (!data.isAdmin || !data.sessionCode) return;
+        await gameService.updateZoneLevel(data.sessionCode, zone, level);
+        await broadcastState(data.sessionCode);
       }
     );
 
     socket.on(
       'admin:update-zone-resource',
-      ({
+      async ({
         zone,
         resource,
         amount,
@@ -146,68 +285,72 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
         resource: ResourceName;
         amount: number;
       }) => {
-        if (!data.isAdmin) return;
-        gameService.updateZoneResource(zone, resource, amount);
-        broadcastState();
+        if (!data.isAdmin || !data.sessionCode) return;
+        await gameService.updateZoneResource(data.sessionCode, zone, resource, amount);
+        await broadcastState(data.sessionCode);
       }
     );
 
-    socket.on('admin:reveal-unknown', () => {
-      if (!data.isAdmin) return;
-      gameService.revealUnknownZone();
-      broadcastState();
+    socket.on('admin:reveal-unknown', async () => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.revealUnknownZone(data.sessionCode);
+      await broadcastState(data.sessionCode);
     });
 
     socket.on(
       'admin:create-vote',
-      ({ question, options }: { question: string; options: string[] }) => {
-        if (!data.isAdmin) return;
-        gameService.createVote(question, options);
-        broadcastState();
+      async ({ question, options }: { question: string; options: string[] }) => {
+        if (!data.isAdmin || !data.sessionCode) return;
+        await gameService.createVote(data.sessionCode, question, options);
+        await broadcastState(data.sessionCode);
       }
     );
 
-    socket.on('admin:start-vote', (voteId: string) => {
-      if (!data.isAdmin) return;
-      gameService.startVote(voteId);
-      broadcastState();
+    socket.on('admin:start-vote', async (voteId: string) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.startVote(data.sessionCode, voteId);
+      await broadcastState(data.sessionCode);
     });
 
-    socket.on('admin:close-vote', (voteId: string) => {
-      if (!data.isAdmin) return;
-      gameService.closeVote(voteId);
-      broadcastState();
+    socket.on('admin:close-vote', async (voteId: string) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.closeVote(data.sessionCode, voteId);
+      await broadcastState(data.sessionCode);
     });
 
-    socket.on('admin:light-candle', (candleId: number) => {
-      if (!data.isAdmin) return;
-      gameService.lightCandle(candleId);
-      broadcastState();
+    socket.on('admin:light-candle', async (candleId: number) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.lightCandle(data.sessionCode, candleId);
+      await broadcastState(data.sessionCode);
     });
 
-    socket.on('admin:reveal-fog', () => {
-      if (!data.isAdmin) return;
-      gameService.revealFog();
-      broadcastState();
+    socket.on('admin:reveal-fog', async () => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.revealFog(data.sessionCode);
+      await broadcastState(data.sessionCode);
     });
 
-    socket.on('admin:reveal-secret', (roleId: number) => {
-      if (!data.isAdmin) return;
-      gameService.revealSecret(roleId);
-      broadcastState();
+    socket.on('admin:reveal-secret', async (roleId: number) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.revealSecret(data.sessionCode, roleId);
+      await broadcastState(data.sessionCode);
     });
 
-    socket.on('admin:reset-session', () => {
-      if (!data.isAdmin) return;
-      stopTimerInterval();
-      gameService.resetSession();
-      broadcastState();
+    socket.on('admin:reset-session', async () => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      stopTimerInterval(data.sessionCode);
+      // Get current session to get playerCount
+      const currentState = await gameService.getState(data.sessionCode);
+      const playerCount = currentState?.settings.playerCount || 4;
+      await gameService.resetSession(data.sessionCode, playerCount);
+      await broadcastState(data.sessionCode);
     });
 
-    // Admin: configure game settings
+    // ============ ADMIN: GAME CONFIGURATION ============
+
     socket.on(
       'admin:configure-game',
-      ({
+      async ({
         playerCount,
         difficulty,
         distributionMode,
@@ -216,10 +359,10 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
         difficulty: Difficulty;
         distributionMode: DistributionMode;
       }) => {
-        if (!data.isAdmin) return;
-        const result = gameService.configureGame({ playerCount, difficulty, distributionMode });
+        if (!data.isAdmin || !data.sessionCode) return;
+        const result = await gameService.configureGame(data.sessionCode, { playerCount, difficulty, distributionMode });
         if (result) {
-          broadcastState();
+          await broadcastState(data.sessionCode);
           socket.emit('admin:configure-success', { playerCount, difficulty, distributionMode });
         } else {
           socket.emit('admin:configure-error', { error: 'Не удалось настроить игру' });
@@ -227,45 +370,40 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
       }
     );
 
-    // Admin: start game (distribute resources)
-    socket.on('admin:start-game', () => {
-      if (!data.isAdmin) return;
-      const result = gameService.startGame();
+    socket.on('admin:start-game', async () => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      const result = await gameService.startGame(data.sessionCode);
       if (result.success) {
-        broadcastState();
+        await broadcastState(data.sessionCode);
         socket.emit('admin:start-game-success');
-        io.emit('game:started');
+        io.to(`session:${data.sessionCode}`).emit('game:started');
       } else {
         socket.emit('admin:start-game-error', { error: result.error });
       }
     });
 
-    // Admin: finish game
-    socket.on('admin:finish-game', () => {
-      if (!data.isAdmin) return;
-      gameService.finishGame();
-      broadcastState();
-      io.emit('game:finished');
+    socket.on('admin:finish-game', async () => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.finishGame(data.sessionCode);
+      await broadcastState(data.sessionCode);
+      io.to(`session:${data.sessionCode}`).emit('game:finished');
     });
 
-    // Admin: set game phase
-    socket.on('admin:set-game-phase', (phase: GamePhase) => {
-      if (!data.isAdmin) return;
-      gameService.setGamePhase(phase);
-      broadcastState();
+    socket.on('admin:set-game-phase', async (phase: GamePhase) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.setGamePhase(data.sessionCode, phase);
+      await broadcastState(data.sessionCode);
     });
 
-    // Admin: unclaim role (remove player from role)
-    socket.on('admin:unclaim-role', (roleId: number) => {
-      if (!data.isAdmin) return;
-      gameService.unclaimRole(roleId);
-      broadcastState();
+    socket.on('admin:unclaim-role', async (roleId: number) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.unclaimRole(data.sessionCode, roleId);
+      await broadcastState(data.sessionCode);
     });
 
-    // Admin: give resource to player
     socket.on(
       'admin:give-resource',
-      ({
+      async ({
         roleId,
         resource,
         amount,
@@ -274,127 +412,59 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
         resource: ResourceName;
         amount: number;
       }) => {
-        if (!data.isAdmin) return;
-        gameService.givePlayerResource(roleId, resource, amount);
-        broadcastState();
+        if (!data.isAdmin || !data.sessionCode) return;
+        await gameService.givePlayerResource(data.sessionCode, roleId, resource, amount);
+        await broadcastState(data.sessionCode);
       }
     );
 
-    // Admin: upgrade zone (with automatic resource validation)
-    socket.on('admin:upgrade-zone', (zone: ZoneName) => {
-      if (!data.isAdmin) return;
-      const result = gameService.upgradeZone(zone);
+    socket.on('admin:upgrade-zone', async (zone: ZoneName) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      const result = await gameService.upgradeZone(data.sessionCode, zone);
       if (result.success) {
-        broadcastState();
+        await broadcastState(data.sessionCode);
         socket.emit('admin:upgrade-success', { zone, newLevel: result.newLevel });
       } else {
         socket.emit('admin:upgrade-error', { zone, error: result.error });
       }
     });
 
-    // Player: claim role (for online distribution)
-    socket.on(
-      'player:claim-role',
-      ({ roleId, playerName }: { roleId: number; playerName: string }) => {
-        const result = gameService.claimRole(roleId, playerName);
-        if (result.success && result.token) {
-          // Save token to socket data
-          data.token = result.token;
-          socket.join(`player:${roleId}`);
-          broadcastState();
-          socket.emit('player:claim-success', { roleId, token: result.token });
-        } else {
-          socket.emit('player:claim-error', { error: result.error });
-        }
-      }
-    );
+    // ============ ADMIN: EVENT SYSTEM ============
 
-    // Player actions
-    socket.on('player:vote', ({ voteId, optionId }: { voteId: string; optionId: string }) => {
-      if (!data.token) return;
-      gameService.castVote(voteId, optionId);
-      broadcastState();
-    });
-
-    socket.on(
-      'player:set-promise',
-      ({ text, deadline }: { text: string; deadline: string }) => {
-        if (!data.token) return;
-        const role = gameService.getRoleByToken(data.token);
-        if (role) {
-          gameService.setPromise(role.id, text, deadline);
-          broadcastState();
-        }
-      }
-    );
-
-    // Player contributes resources to zone
-    socket.on(
-      'player:contribute',
-      ({
-        zone,
-        resource,
-        amount,
-      }: {
-        zone: ZoneName;
-        resource: ResourceName;
-        amount: number;
-      }) => {
-        if (!data.token) return;
-        const role = gameService.getRoleByToken(data.token);
-        if (!role) return;
-
-        const result = gameService.contributeToZone(role.id, zone, resource, amount);
-        if (result.success) {
-          broadcastState();
-          socket.emit('player:contribute-success', { zone, resource, amount });
-        } else {
-          socket.emit('player:contribute-error', { error: result.error });
-        }
-      }
-    );
-
-    // ============ EVENT SYSTEM ============
-
-    // Admin: update event settings
     socket.on(
       'admin:update-event-settings',
-      (settings: {
+      async (settings: {
         enabled?: boolean;
         probability?: number;
         enabledEventIds?: number[];
       }) => {
-        if (!data.isAdmin) return;
-        gameService.updateEventSettings(settings);
-        broadcastState();
+        if (!data.isAdmin || !data.sessionCode) return;
+        await gameService.updateEventSettings(data.sessionCode, settings);
+        await broadcastState(data.sessionCode);
       }
     );
 
-    // Admin: trigger event
-    socket.on('admin:trigger-event', (eventId: number) => {
-      if (!data.isAdmin) return;
-      gameService.triggerEvent(eventId);
-      broadcastState();
+    socket.on('admin:trigger-event', async (eventId: number) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.triggerEvent(data.sessionCode, eventId);
+      await broadcastState(data.sessionCode);
     });
 
-    // Admin: trigger dilemma event
-    socket.on('admin:trigger-dilemma-event', (eventId: number) => {
-      if (!data.isAdmin) return;
-      gameService.triggerDilemmaEvent(eventId);
-      broadcastState();
+    socket.on('admin:trigger-dilemma-event', async (eventId: number) => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.triggerDilemmaEvent(data.sessionCode, eventId);
+      await broadcastState(data.sessionCode);
     });
 
-    // Admin: dismiss active event
-    socket.on('admin:dismiss-event', () => {
-      if (!data.isAdmin) return;
-      gameService.dismissEvent();
-      broadcastState();
+    socket.on('admin:dismiss-event', async () => {
+      if (!data.isAdmin || !data.sessionCode) return;
+      await gameService.dismissEvent(data.sessionCode);
+      await broadcastState(data.sessionCode);
     });
 
-    // Admin: apply event effect
     socket.on(
       'admin:apply-event-effect',
-      ({
+      async ({
         resource,
         amount,
         zone,
@@ -403,28 +473,28 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
         amount: number;
         zone: ZoneName | 'all';
       }) => {
-        if (!data.isAdmin) return;
-        gameService.applyEventEffect(resource, amount, zone);
-        broadcastState();
+        if (!data.isAdmin || !data.sessionCode) return;
+        await gameService.applyEventEffect(data.sessionCode, resource, amount, zone);
+        await broadcastState(data.sessionCode);
       }
     );
 
-    // Admin: record dilemma choice
     socket.on(
       'admin:record-event-choice',
-      ({ eventId, choice }: { eventId: number; choice: string }) => {
-        if (!data.isAdmin) return;
-        gameService.recordEventChoice(eventId, choice);
-        broadcastState();
+      async ({ eventId, choice }: { eventId: number; choice: string }) => {
+        if (!data.isAdmin || !data.sessionCode) return;
+        await gameService.recordEventChoice(data.sessionCode, eventId, choice);
+        await broadcastState(data.sessionCode);
       }
     );
 
-    // Disconnect
-    socket.on('disconnect', () => {
+    // ============ DISCONNECT ============
+
+    socket.on('disconnect', async () => {
       console.log(`Client disconnected: ${socket.id}`);
-      if (data.token) {
-        gameService.disconnectPlayer(data.token);
-        broadcastState();
+      if (data.token && data.sessionCode) {
+        await gameService.disconnectPlayer(data.sessionCode, data.token);
+        await broadcastState(data.sessionCode);
       }
     });
   });
