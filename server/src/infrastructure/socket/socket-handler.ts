@@ -222,13 +222,27 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
         if (!role) return;
 
         const result = await gameService.contributeToZone(data.sessionCode, role.id, zone, resource, amount);
-        if (result.success) {
+        if (result.success && result.state) {
           // Log resource contribution
           await loggingService.logPlayerAction(data.sessionCode, role.id, 'RESOURCE_CONTRIBUTE', {
             zone,
             resource,
             amount,
           });
+
+          // Emit map animation event (only for zones with resources)
+          if (zone !== 'unknown') {
+            const zoneData = result.state.zones[zone];
+            const newTotal = zoneData.resources[resource];
+            io.to(`session:${data.sessionCode}`).emit('map:resource-contributed', {
+              zone,
+              resource,
+              amount,
+              roleId: role.id,
+              roleName: role.name,
+              newTotal,
+            });
+          }
 
           await broadcastState(data.sessionCode);
           socket.emit('player:contribute-success', { zone, resource, amount });
@@ -488,8 +502,33 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
 
     socket.on('admin:upgrade-zone', async (zone: ZoneName) => {
       if (!data.isAdmin || !data.sessionCode) return;
+
+      // Unknown zone cannot be upgraded
+      if (zone === 'unknown') {
+        socket.emit('admin:upgrade-error', { zone, error: 'Cannot upgrade unknown zone' });
+        return;
+      }
+
+      // Get current level before upgrade
+      const prevState = await gameService.getState(data.sessionCode);
+      const fromLevel = prevState?.zones[zone]?.level ?? 0;
+
       const result = await gameService.upgradeZone(data.sessionCode, zone);
-      if (result.success) {
+      if (result.success && result.newLevel !== undefined) {
+        // Log zone upgrade
+        await loggingService.logAdminAction(data.sessionCode, 'ZONE_UPDATE', {
+          zone,
+          fromLevel,
+          toLevel: result.newLevel,
+        });
+
+        // Emit map animation event
+        io.to(`session:${data.sessionCode}`).emit('map:zone-upgraded', {
+          zone,
+          fromLevel,
+          toLevel: result.newLevel,
+        });
+
         await broadcastState(data.sessionCode);
         socket.emit('admin:upgrade-success', { zone, newLevel: result.newLevel });
       } else {
@@ -521,18 +560,48 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
         eventId,
       });
 
+      // Emit map animation event
+      io.to(`session:${data.sessionCode}`).emit('map:event-started', {
+        eventId,
+      });
+
       await broadcastState(data.sessionCode);
     });
 
     socket.on('admin:trigger-dilemma-event', async (eventId: number) => {
       if (!data.isAdmin || !data.sessionCode) return;
       await gameService.triggerDilemmaEvent(data.sessionCode, eventId);
+
+      // Emit map animation event
+      io.to(`session:${data.sessionCode}`).emit('map:event-started', {
+        eventId,
+        isDilemma: true,
+      });
+
       await broadcastState(data.sessionCode);
     });
 
     socket.on('admin:dismiss-event', async () => {
       if (!data.isAdmin || !data.sessionCode) return;
+
+      // Get active event before dismiss
+      const prevState = await gameService.getState(data.sessionCode);
+      const eventId = prevState?.activeEvent?.eventId;
+
       await gameService.dismissEvent(data.sessionCode);
+
+      // Log event dismiss
+      if (eventId !== undefined) {
+        await loggingService.logAdminAction(data.sessionCode, 'EVENT_DISMISS', {
+          eventId,
+        });
+
+        // Emit map animation event
+        io.to(`session:${data.sessionCode}`).emit('map:event-ended', {
+          eventId,
+        });
+      }
+
       await broadcastState(data.sessionCode);
     });
 

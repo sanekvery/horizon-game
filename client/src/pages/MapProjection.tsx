@@ -1,9 +1,17 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
+import { useMapAnimations, type ResourceContributedEvent, type ZoneUpgradedEvent } from '../hooks/useMapAnimations';
+import {
+  ZoneResourceIndicator,
+  ResourceFlowAnimation,
+  ZoneUpgradeAnimation,
+  EventOverlay,
+} from '../components/map';
 import scenarioData from '../data/scenario.json';
 import rolesData from '../data/roles.json';
 import type { GameRole } from '../types/game-data';
+import type { ZoneName } from '../types/game-state';
 
 // ============ CONSTANTS ============
 
@@ -34,8 +42,15 @@ function formatTime(seconds: number): string {
 export function MapProjection() {
   const [searchParams] = useSearchParams();
   const sessionCode = searchParams.get('session');
+  const isProjectorMode = searchParams.get('projector') === 'true';
 
   const { state, isConnected, isSessionJoined } = useGameState({ sessionCode });
+
+  // Map animations hook
+  const {
+    animationQueue,
+    removeFromQueue,
+  } = useMapAnimations({ sessionCode: sessionCode || '', enabled: !!sessionCode });
 
   // Animation states
   const [fogLayers, setFogLayers] = useState([1, 1, 1, 1]);
@@ -46,10 +61,27 @@ export function MapProjection() {
   const [animatingBuildings, setAnimatingBuildings] = useState<Record<string, boolean>>({});
   const [newCandles, setNewCandles] = useState<Set<number>>(new Set());
   const [activeZone, setActiveZone] = useState<string | null>(null);
+  const [highlightedZones, setHighlightedZones] = useState<Set<ZoneName>>(new Set());
 
   const prevCandlesRef = useRef<number[]>([]);
   const prevCrisisStateRef = useRef(false);
   const messageShownRef = useRef(false);
+
+  // Handle animation completion
+  const handleAnimationComplete = useCallback((animationId: string) => {
+    removeFromQueue(animationId);
+  }, [removeFromQueue]);
+
+  // Update highlighted zones based on active animations
+  useEffect(() => {
+    const resourceAnimations = animationQueue.filter(a => a.type === 'resource-flow');
+    const zones = new Set<ZoneName>();
+    resourceAnimations.forEach(anim => {
+      const data = anim.data as ResourceContributedEvent;
+      zones.add(data.zone);
+    });
+    setHighlightedZones(zones);
+  }, [animationQueue]);
 
   // Handle fog reveal animation - sequential layer fade
   useEffect(() => {
@@ -390,6 +422,70 @@ export function MapProjection() {
             roles={state.roles}
             newCandles={newCandles}
           />
+
+          {/* Zone Resource Indicators */}
+          {!isProjectorMode && (
+            <>
+              <ZoneResourceIndicator
+                zone="center"
+                resources={state.zones.center.resources}
+                isAnimating={highlightedZones.has('center')}
+              />
+              <ZoneResourceIndicator
+                zone="residential"
+                resources={state.zones.residential.resources}
+                isAnimating={highlightedZones.has('residential')}
+              />
+              <ZoneResourceIndicator
+                zone="industrial"
+                resources={state.zones.industrial.resources}
+                isAnimating={highlightedZones.has('industrial')}
+              />
+              <ZoneResourceIndicator
+                zone="green"
+                resources={state.zones.green.resources}
+                isAnimating={highlightedZones.has('green')}
+              />
+            </>
+          )}
+
+          {/* Event Overlay */}
+          {state.activeEvent && (
+            <EventOverlay activeEvent={state.activeEvent} />
+          )}
+
+          {/* Resource Flow Animations */}
+          {animationQueue
+            .filter(a => a.type === 'resource-flow')
+            .map(animation => {
+              const data = animation.data as ResourceContributedEvent;
+              return (
+                <ResourceFlowAnimation
+                  key={animation.id}
+                  zone={data.zone}
+                  resource={data.resource}
+                  amount={data.amount}
+                  roleName={data.roleName}
+                  onComplete={() => handleAnimationComplete(animation.id)}
+                />
+              );
+            })}
+
+          {/* Zone Upgrade Animations */}
+          {animationQueue
+            .filter(a => a.type === 'zone-upgrade')
+            .map(animation => {
+              const data = animation.data as ZoneUpgradedEvent;
+              return (
+                <ZoneUpgradeAnimation
+                  key={animation.id}
+                  zone={data.zone}
+                  fromLevel={data.fromLevel}
+                  toLevel={data.toLevel}
+                  onComplete={() => handleAnimationComplete(animation.id)}
+                />
+              );
+            })}
         </svg>
 
         {/* Floating promises overlay */}
@@ -552,6 +648,71 @@ export function MapProjection() {
 
         .flame-flicker {
           animation: flame-flicker 0.4s ease-in-out infinite;
+        }
+
+        /* Resource indicator animations */
+        @keyframes indicator-pulse {
+          0%, 100% {
+            transform: scale(1);
+            filter: brightness(1);
+          }
+          50% {
+            transform: scale(1.05);
+            filter: brightness(1.2);
+          }
+        }
+
+        .indicator-pulse {
+          animation: indicator-pulse 0.5s ease-in-out 3;
+        }
+
+        @keyframes resource-value-pulse {
+          0%, 100% {
+            transform: scale(1);
+          }
+          50% {
+            transform: scale(1.2);
+          }
+        }
+
+        .resource-value-pulse {
+          animation: resource-value-pulse 0.5s ease-in-out;
+        }
+
+        .resource-icon-pulse {
+          animation: resource-value-pulse 0.5s ease-in-out;
+        }
+
+        /* Plus amount animation */
+        @keyframes plus-float-up {
+          0% {
+            transform: translateY(0);
+            opacity: 0;
+          }
+          20% {
+            opacity: 1;
+          }
+          80% {
+            opacity: 1;
+          }
+          100% {
+            transform: translateY(-30px);
+            opacity: 0;
+          }
+        }
+
+        .plus-amount-animation {
+          animation: plus-float-up 1.2s ease-out forwards;
+        }
+
+        /* Event overlay pulse */
+        @keyframes event-pulse {
+          0%, 100% {
+            opacity: 0.2;
+          }
+          50% {
+            opacity: 0.4;
+          }
         }
       `}</style>
     </div>
