@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import { useProgression, type XPGainEvent, type LevelUpEvent } from '../hooks/useProgression';
+import { getStoredToken as getPlayerAuthToken } from '../services/player-auth-api';
 import rolesData from '../data/roles.json';
 import crisesData from '../data/crises.json';
 import scenarioData from '../data/scenario.json';
@@ -78,10 +79,11 @@ export function MobilePlayer() {
   });
   const [showRoleModal, setShowRoleModal] = useState(false);
 
-  // Join game with token
+  // Join game with token (include player auth token if logged in)
   useEffect(() => {
     if (token && isConnected) {
-      joinAsPlayer(token);
+      const playerAuthToken = getPlayerAuthToken();
+      joinAsPlayer(token, playerAuthToken || undefined);
     }
   }, [token, isConnected, joinAsPlayer]);
 

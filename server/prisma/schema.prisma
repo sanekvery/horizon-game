@@ -10,6 +10,116 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================
+// ПОЛЬЗОВАТЕЛИ И АВТОРИЗАЦИЯ
+// ============================================
+
+// Базовый пользователь (игрок или фасилитатор)
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String    @map("password_hash")
+  emailVerified   Boolean   @default(false) @map("email_verified")
+  verifyToken     String?   @map("verify_token")
+  resetToken      String?   @map("reset_token")
+  resetTokenExp   DateTime? @map("reset_token_exp")
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  lastLoginAt     DateTime? @map("last_login_at")
+
+  // Профили (оба опциональные - один User может быть и игроком, и фасилитатором)
+  playerProfile   PlayerProfile?
+
+  // Сессии авторизации
+  authSessions    AuthSession[]
+
+  @@map("users")
+}
+
+// Сессии авторизации (для JWT refresh и управления устройствами)
+model AuthSession {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token       String   @unique
+  userAgent   String?  @map("user_agent")
+  ipAddress   String?  @map("ip_address")
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([token])
+  @@map("auth_sessions")
+}
+
+// Профиль игрока (один на все роли)
+model PlayerProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique @map("user_id")
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  displayName     String   @map("display_name")
+  avatar          String?  // URL или код аватара
+
+  // Прогрессия (общая на все роли)
+  totalXP         Int      @default(0) @map("total_xp")
+  level           Int      @default(0)
+  stats           Json     @default("{\"strength\":5,\"agility\":5,\"negotiation\":5,\"intellect\":5,\"charisma\":5,\"craft\":5}")
+  availablePoints Int      @default(0) @map("available_points")
+
+  // Достижения
+  achievements    Json     @default("[]")
+
+  // Статистика
+  totalGames      Int      @default(0) @map("total_games")
+  totalWins       Int      @default(0) @map("total_wins")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // История игр
+  gameHistory     PlayerGameHistory[]
+
+  // Связь с сессиями (когда игрок в активной игре)
+  sessionPlayers  SessionPlayer[]
+
+  @@map("player_profiles")
+}
+
+// История игр игрока
+model PlayerGameHistory {
+  id                    String        @id @default(uuid())
+  playerProfileId       String        @map("player_profile_id")
+  playerProfile         PlayerProfile @relation(fields: [playerProfileId], references: [id], onDelete: Cascade)
+
+  sessionId             String        @map("session_id")
+  session               GameSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  roleId                Int           @map("role_id")
+  roleName              String        @map("role_name")
+
+  xpEarned              Int           @default(0) @map("xp_earned")
+  statsSnapshot         Json          @map("stats_snapshot") // Статы на момент игры
+
+  // Результат
+  teamWon               Boolean       @default(false) @map("team_won")
+  personalScore         Int?          @map("personal_score")
+
+  playedAt              DateTime      @default(now()) @map("played_at")
+  duration              Int?          // Длительность в минутах
+
+  // Достижения, полученные в этой игре
+  achievementsUnlocked  Json          @default("[]") @map("achievements_unlocked")
+
+  @@index([playerProfileId])
+  @@index([sessionId])
+  @@map("player_game_history")
+}
+
+// ============================================
+// ФАСИЛИТАТОРЫ (существующая модель)
+// ============================================
+
 // Фасилитаторы (пользователи системы)
 model Facilitator {
   id                    String         @id @default(uuid())
@@ -35,6 +145,7 @@ enum FacilitatorRole {
 
 enum SubscriptionType {
   FREE
+  BASIC
   PRO
   ENTERPRISE
 }
@@ -58,6 +169,7 @@ model GameSession {
   players             SessionPlayer[]
   actionLogs          ActionLog[]
   gameEvents          GameEvent[]
+  playerHistories     PlayerGameHistory[]
 
   @@index([facilitatorId])
   @@index([status])
@@ -87,10 +199,15 @@ model SessionPlayer {
   lastSeenAt        DateTime?      @map("last_seen_at")
   createdAt         DateTime       @default(now()) @map("created_at")
 
+  // Связь с профилем игрока (опционально для гостей)
+  playerProfileId   String?        @map("player_profile_id")
+  playerProfile     PlayerProfile? @relation(fields: [playerProfileId], references: [id])
+
   actionLogs        ActionLog[]
 
   @@index([sessionId])
   @@index([token])
+  @@index([playerProfileId])
   @@map("session_players")
 }
 

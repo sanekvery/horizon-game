@@ -1,4 +1,4 @@
-import { Component, ReactNode } from 'react';
+import { Component, ReactNode, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
 import { MapProjection } from './pages/MapProjection';
 import { AdminDashboard } from './pages/AdminDashboard';
@@ -9,6 +9,11 @@ import { RoleLobby } from './pages/RoleLobby';
 import { FacilitatorAuth } from './pages/FacilitatorAuth';
 import { FacilitatorDashboard } from './pages/FacilitatorDashboard';
 import { SessionHistoryPage } from './pages/SessionHistoryPage';
+import { LoginPage } from './pages/auth/LoginPage';
+import { RegisterPage } from './pages/auth/RegisterPage';
+import { ProfileDashboard } from './pages/profile/ProfileDashboard';
+import { AuthGuard } from './components/auth/AuthGuard';
+import { useAuthStore, type AuthState } from './stores/authStore';
 
 // Страница входа (обход ngrok interstitial)
 function JoinPage() {
@@ -75,24 +80,54 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
   }
 }
 
+function AppContent() {
+  const initialize = useAuthStore((state: AuthState) => state.initialize);
+
+  // Initialize auth state on app startup
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  return (
+    <Routes>
+      {/* Public routes */}
+      <Route path="/map" element={<MapProjection />} />
+      <Route path="/auth" element={<FacilitatorAuth />} />
+      <Route path="/facilitator" element={<FacilitatorDashboard />} />
+      <Route path="/session/:sessionCode/history" element={<SessionHistoryPage />} />
+      <Route path="/admin" element={<AdminDashboard />} />
+      <Route path="/setup" element={<GameSetup />} />
+      <Route path="/qr" element={<QRCodesPage />} />
+      <Route path="/lobby" element={<RoleLobby />} />
+      <Route path="/join/:token" element={<JoinPage />} />
+      <Route path="/play/:token" element={<MobilePlayer />} />
+
+      {/* Player auth routes */}
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+
+      {/* Protected player routes */}
+      <Route
+        path="/profile"
+        element={
+          <AuthGuard>
+            <ProfileDashboard />
+          </AuthGuard>
+        }
+      />
+
+      {/* Default and fallback */}
+      <Route path="/" element={<Navigate to="/map" replace />} />
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}
+
 function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <Routes>
-          <Route path="/map" element={<MapProjection />} />
-          <Route path="/auth" element={<FacilitatorAuth />} />
-          <Route path="/facilitator" element={<FacilitatorDashboard />} />
-          <Route path="/session/:sessionCode/history" element={<SessionHistoryPage />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/setup" element={<GameSetup />} />
-          <Route path="/qr" element={<QRCodesPage />} />
-          <Route path="/lobby" element={<RoleLobby />} />
-          <Route path="/join/:token" element={<JoinPage />} />
-          <Route path="/play/:token" element={<MobilePlayer />} />
-          <Route path="/" element={<Navigate to="/map" replace />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AppContent />
       </BrowserRouter>
     </ErrorBoundary>
   );

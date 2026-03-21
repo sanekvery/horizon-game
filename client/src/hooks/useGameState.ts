@@ -16,11 +16,11 @@ interface UseGameStateReturn {
   sessionCode: string | null;
 
   // Player actions
-  joinAsPlayer: (token: string) => void;
+  joinAsPlayer: (token: string, playerAuthToken?: string) => void;
   castVote: (voteId: string, optionId: string) => void;
   setPromise: (text: string, deadline: string) => void;
   contributeToZone: (zone: ZoneName, resource: ResourceName, amount: number) => void;
-  claimRole: (roleId: number, playerName: string) => void;
+  claimRole: (roleId: number, playerName: string, playerAuthToken?: string) => void;
 
   // Admin actions
   authenticateAdmin: (password: string) => void;
@@ -125,8 +125,12 @@ export function useGameState(options: UseGameStateOptions = {}): UseGameStateRet
   }, [isConnected, isSessionJoined, emit, isAdmin]);
 
   // Player actions
-  const joinAsPlayer = useCallback((token: string) => {
-    emit('player:join', token);
+  const joinAsPlayer = useCallback((token: string, playerAuthToken?: string) => {
+    if (playerAuthToken) {
+      emit('player:join', { token, playerAuthToken });
+    } else {
+      emit('player:join', token);
+    }
   }, [emit]);
 
   const castVote = useCallback((voteId: string, optionId: string) => {
@@ -145,8 +149,8 @@ export function useGameState(options: UseGameStateOptions = {}): UseGameStateRet
   );
 
   const claimRole = useCallback(
-    (roleId: number, playerName: string) => {
-      emit('player:claim-role', { roleId, playerName });
+    (roleId: number, playerName: string, playerAuthToken?: string) => {
+      emit('player:claim-role', { roleId, playerName, playerAuthToken });
     },
     [emit]
   );

@@ -2,6 +2,7 @@ import type { Server, Socket } from 'socket.io';
 import type { GameService } from '../../application/services/game-service.js';
 import type { ZoneName, ResourceName, Difficulty, DistributionMode, GamePhase } from '../../domain/entities/game-state.js';
 import { authService } from '../../application/services/auth-service.js';
+import { playerAuthService } from '../../application/services/player-auth-service.js';
 import { loggingService } from '../../application/services/logging-service.js';
 import { ProgressionService } from '../../application/services/progression-service.js';
 import { ProgressionCalculator } from '../../domain/services/progression-calculator.js';
@@ -13,6 +14,7 @@ interface SocketData {
   token?: string;
   isAdmin?: boolean;
   sessionCode?: string;
+  playerProfileId?: string;
 }
 
 /**
@@ -72,6 +74,67 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
     }
 
     return true;
+  };
+
+  /**
+   * Sync earned XP from game session to permanent player profiles.
+   * Called when game finishes.
+   */
+  const syncXPToPlayerProfiles = async (
+    sessionCode: string,
+    gameState: Awaited<ReturnType<typeof gameService.getState>>,
+    teamWon: boolean
+  ): Promise<void> => {
+    if (!gameState) return;
+
+    // Get session from database with player links
+    const session = await prisma.gameSession.findUnique({
+      where: { code: sessionCode },
+      include: {
+        players: {
+          where: { playerProfileId: { not: null } },
+        },
+      },
+    });
+
+    if (!session) return;
+
+    for (const sessionPlayer of session.players) {
+      if (!sessionPlayer.playerProfileId) continue;
+
+      const role = gameState.roles.find(r => r.id === sessionPlayer.roleId);
+      if (!role) continue;
+
+      const xpEarned = sessionPlayer.experienceGained || 0;
+      const statsSnapshot = sessionPlayer.stats as Record<string, number>;
+
+      // Add XP to player profile
+      const result = await playerAuthService.addGameXP(
+        sessionPlayer.playerProfileId,
+        xpEarned,
+        teamWon
+      );
+
+      // Record game history
+      await playerAuthService.recordGameHistory(
+        sessionPlayer.playerProfileId,
+        session.id,
+        {
+          roleId: sessionPlayer.roleId,
+          roleName: role.name,
+          xpEarned,
+          teamWon,
+          statsSnapshot,
+        }
+      );
+
+      if (result.success) {
+        console.log(
+          `[Socket] Synced ${xpEarned} XP to profile ${sessionPlayer.playerProfileId}. ` +
+            `Level: ${result.newLevel}${result.leveledUp ? ' (LEVEL UP!)' : ''}`
+        );
+      }
+    }
   };
 
   /**
@@ -155,41 +218,77 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
     // ============ PLAYER ACTIONS ============
 
     /**
-     * Player joins with token.
+     * Player joins with token and optional player auth token.
      */
-    socket.on('player:join', async (token: string) => {
-      if (!data.sessionCode) {
-        socket.emit('player:error', { message: 'Session not joined' });
-        return;
+    socket.on(
+      'player:join',
+      async (payload: string | { token: string; playerAuthToken?: string }) => {
+        if (!data.sessionCode) {
+          socket.emit('player:error', { message: 'Session not joined' });
+          return;
+        }
+
+        // Support both old format (just token string) and new format (object with auth)
+        const token = typeof payload === 'string' ? payload : payload.token;
+        const playerAuthToken = typeof payload === 'object' ? payload.playerAuthToken : undefined;
+
+        const role = await gameService.getRoleByToken(data.sessionCode, token);
+        if (!role) {
+          socket.emit('player:error', { message: 'Неверный токен' });
+          return;
+        }
+
+        // If player auth token provided, link profile to session player
+        let playerProfileId: string | undefined;
+        if (playerAuthToken) {
+          const jwtPayload = await playerAuthService.verifyJwt(playerAuthToken);
+          if (jwtPayload?.playerProfileId) {
+            playerProfileId = jwtPayload.playerProfileId;
+
+            // Link profile to session player
+            await prisma.sessionPlayer.update({
+              where: { token },
+              data: { playerProfileId },
+            });
+
+            console.log(
+              `[Socket] Linked player profile ${playerProfileId} to role ${role.id} in ${data.sessionCode}`
+            );
+          }
+        }
+
+        data.token = token;
+        data.playerProfileId = playerProfileId;
+        socket.join(`player:${role.id}`);
+        await gameService.connectPlayer(data.sessionCode, token);
+
+        // Log player join
+        await loggingService.logPlayerAction(data.sessionCode, role.id, 'PLAYER_JOIN', {
+          roleName: role.name,
+          socketId: socket.id,
+          playerProfileId,
+        });
+
+        await broadcastState(data.sessionCode);
+
+        socket.emit('player:joined', { role, isProfileLinked: !!playerProfileId });
       }
-
-      const role = await gameService.getRoleByToken(data.sessionCode, token);
-      if (!role) {
-        socket.emit('player:error', { message: 'Неверный токен' });
-        return;
-      }
-
-      data.token = token;
-      socket.join(`player:${role.id}`);
-      await gameService.connectPlayer(data.sessionCode, token);
-
-      // Log player join
-      await loggingService.logPlayerAction(data.sessionCode, role.id, 'PLAYER_JOIN', {
-        roleName: role.name,
-        socketId: socket.id,
-      });
-
-      await broadcastState(data.sessionCode);
-
-      socket.emit('player:joined', { role });
-    });
+    );
 
     /**
      * Player claims a role (for online distribution).
      */
     socket.on(
       'player:claim-role',
-      async ({ roleId, playerName }: { roleId: number; playerName: string }) => {
+      async ({
+        roleId,
+        playerName,
+        playerAuthToken,
+      }: {
+        roleId: number;
+        playerName: string;
+        playerAuthToken?: string;
+      }) => {
         if (!data.sessionCode) {
           socket.emit('player:error', { message: 'Session not joined' });
           return;
@@ -200,14 +299,40 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
           data.token = result.token;
           socket.join(`player:${roleId}`);
 
+          // If player auth token provided, link profile to session player
+          let playerProfileId: string | undefined;
+          if (playerAuthToken) {
+            const jwtPayload = await playerAuthService.verifyJwt(playerAuthToken);
+            if (jwtPayload?.playerProfileId) {
+              playerProfileId = jwtPayload.playerProfileId;
+
+              // Link profile to session player
+              await prisma.sessionPlayer.update({
+                where: { token: result.token },
+                data: { playerProfileId },
+              });
+
+              console.log(
+                `[Socket] Linked player profile ${playerProfileId} to claimed role ${roleId} in ${data.sessionCode}`
+              );
+            }
+          }
+
+          data.playerProfileId = playerProfileId;
+
           // Log role claim
           await loggingService.logPlayerAction(data.sessionCode, roleId, 'ROLE_CLAIM', {
             playerName,
             roleId,
+            playerProfileId,
           });
 
           await broadcastState(data.sessionCode);
-          socket.emit('player:claim-success', { roleId, token: result.token });
+          socket.emit('player:claim-success', {
+            roleId,
+            token: result.token,
+            isProfileLinked: !!playerProfileId,
+          });
         } else {
           socket.emit('player:claim-error', { error: result.error });
         }
@@ -550,6 +675,9 @@ export function setupSocketHandlers(io: Server, gameService: GameService): void 
             await awardXP(data.sessionCode, player.id, 'GAME_WIN');
           }
         }
+
+        // Sync XP to permanent player profiles
+        await syncXPToPlayerProfiles(data.sessionCode, prevState, teamWon);
       }
 
       await broadcastState(data.sessionCode);

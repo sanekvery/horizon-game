@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import { RoleCard } from '../components/RoleCard';
+import { getStoredToken as getPlayerAuthToken } from '../services/player-auth-api';
 import rolesData from '../data/roles.json';
 import type { GameRole } from '../types/game-data';
 
@@ -69,7 +70,8 @@ export function RoleLobby() {
 
     setIsClaiming(true);
     setClaimError(null);
-    claimRole(selectedRoleId, playerName.trim());
+    const playerAuthToken = getPlayerAuthToken();
+    claimRole(selectedRoleId, playerName.trim(), playerAuthToken || undefined);
 
     // Save token and redirect immediately
     const token = role.token;

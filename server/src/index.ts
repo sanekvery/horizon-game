@@ -13,6 +13,7 @@ import { createApiRoutes } from './presentation/routes/api-routes.js';
 import { createAuthRoutes } from './presentation/routes/auth-routes.js';
 import { createSessionRoutes } from './presentation/routes/session-routes.js';
 import { createProgressionRoutes } from './presentation/routes/progression-routes.js';
+import { createPlayerAuthRoutes } from './presentation/routes/player-auth-routes.js';
 import { setupSocketHandlers } from './infrastructure/socket/socket-handler.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -44,6 +45,7 @@ app.use('/api', createApiRoutes(gameService));
 app.use('/api/auth', createAuthRoutes());
 app.use('/api/sessions', createSessionRoutes());
 app.use('/api/progression', createProgressionRoutes(prisma));
+app.use('/api/player/auth', createPlayerAuthRoutes());
 
 // Serve static files in production
 if (appConfig.isProduction) {
