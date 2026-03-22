@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useGameState } from '../hooks/useGameState';
 import { RoleCard } from '../components/RoleCard';
 import { getStoredToken as getPlayerAuthToken } from '../services/player-auth-api';
+import { useAuthStore } from '../stores/authStore';
 import rolesData from '../data/roles.json';
 import type { GameRole } from '../types/game-data';
 
@@ -14,6 +15,7 @@ export function RoleLobby() {
   const sessionCode = searchParams.get('session');
 
   const { state, isConnected, isSessionJoined, claimRole } = useGameState({ sessionCode });
+  const { user, playerProfile } = useAuthStore();
   const [playerName, setPlayerName] = useState('');
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -205,6 +207,24 @@ export function RoleLobby() {
           <div className="text-4xl mb-2">🌆</div>
           <h1 className="text-2xl font-bold text-[#D4A017] mb-1">Проект Горизонт</h1>
           <p className="text-[#778DA9]">Выберите свою роль</p>
+
+          {/* Auth status badge */}
+          <div className="mt-3">
+            {user ? (
+              <div className="inline-flex items-center gap-2 bg-[#D4A017]/20 text-[#D4A017] px-3 py-1.5 rounded-lg text-sm">
+                <span>{playerProfile?.displayName}</span>
+                <span className="text-[#D4A017]/60">•</span>
+                <span>Ур. {playerProfile?.level || 1}</span>
+              </div>
+            ) : (
+              <Link
+                to={`/login?from=${encodeURIComponent(`/lobby?session=${sessionCode}`)}`}
+                className="inline-block text-[#778DA9] hover:text-[#D4A017] text-sm transition-colors"
+              >
+                Войти для сохранения прогресса →
+              </Link>
+            )}
+          </div>
         </div>
 
         {/* Progress */}

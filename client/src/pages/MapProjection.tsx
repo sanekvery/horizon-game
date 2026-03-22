@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
+import { useAuthStore } from '../stores/authStore';
 import { useGameState } from '../hooks/useGameState';
 import { useMapAnimations, type ResourceContributedEvent, type ZoneUpgradedEvent } from '../hooks/useMapAnimations';
 import {
@@ -45,6 +46,7 @@ export function MapProjection() {
   const isProjectorMode = searchParams.get('projector') === 'true';
 
   const { state, isConnected, isSessionJoined } = useGameState({ sessionCode });
+  const { user, playerProfile, isInitialized } = useAuthStore();
 
   // Map animations hook
   const {
@@ -238,6 +240,33 @@ export function MapProjection() {
 
   return (
     <div className="fixed inset-0 bg-[#0D1B2A] overflow-hidden select-none">
+      {/* Player account button */}
+      {isInitialized && !isProjectorMode && (
+        <div className="fixed top-4 right-4 z-50">
+          {user ? (
+            <Link
+              to="/profile"
+              className="flex items-center gap-2 bg-[#1B263B]/90 backdrop-blur-sm border border-[#415A77]/50 px-3 py-2 rounded-lg hover:border-[#D4A017]/50 transition-colors"
+            >
+              <div className="w-8 h-8 rounded-full bg-[#D4A017]/20 flex items-center justify-center text-sm">
+                {playerProfile?.avatar || playerProfile?.displayName?.[0]?.toUpperCase() || '?'}
+              </div>
+              <div className="text-sm">
+                <div className="text-[#E0E1DD] font-medium">{playerProfile?.displayName}</div>
+                <div className="text-[#778DA9] text-xs">Ур. {playerProfile?.level || 1}</div>
+              </div>
+            </Link>
+          ) : (
+            <Link
+              to="/login"
+              className="flex items-center gap-2 bg-[#D4A017] hover:bg-[#B8860B] text-[#0D1B2A] font-semibold px-4 py-2 rounded-lg transition-colors"
+            >
+              <span>Войти</span>
+            </Link>
+          )}
+        </div>
+      )}
+
       {/* Crisis flash overlay */}
       <div
         className="fixed inset-0 bg-red-600 pointer-events-none z-40 transition-opacity duration-200"

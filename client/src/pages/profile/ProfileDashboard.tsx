@@ -4,6 +4,7 @@
  * Player's personal dashboard with stats, level, and game history.
  */
 
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../components/auth/AuthGuard';
 import { StatsDisplay } from '../../components/progression/StatsDisplay';
@@ -12,10 +13,18 @@ import { ExperienceBar } from '../../components/progression/ExperienceBar';
 export function ProfileDashboard() {
   const navigate = useNavigate();
   const { user, playerProfile, logout, isLoading } = useAuth();
+  const [sessionCode, setSessionCode] = useState('');
 
   const handleLogout = async () => {
     await logout();
     navigate('/');
+  };
+
+  const handleJoinGame = () => {
+    const code = sessionCode.trim().toUpperCase();
+    if (code.length >= 4) {
+      navigate(`/lobby?session=${code}`);
+    }
   };
 
   if (isLoading || !user || !playerProfile) {
@@ -115,10 +124,17 @@ export function ProfileDashboard() {
                 <input
                   type="text"
                   placeholder="Код сессии"
+                  value={sessionCode}
+                  onChange={(e) => setSessionCode(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => e.key === 'Enter' && handleJoinGame()}
                   className="flex-1 bg-[#0D1B2A] border border-[#415A77] rounded-lg px-3 py-2 text-[#E0E1DD] placeholder-[#415A77] focus:border-[#D4A017] focus:outline-none text-sm uppercase"
                   maxLength={8}
                 />
-                <button className="bg-[#D4A017] hover:bg-[#B8860B] text-[#0D1B2A] font-semibold px-4 py-2 rounded-lg transition-colors">
+                <button
+                  onClick={handleJoinGame}
+                  disabled={sessionCode.trim().length < 4}
+                  className="bg-[#D4A017] hover:bg-[#B8860B] disabled:bg-[#415A77] disabled:cursor-not-allowed text-[#0D1B2A] font-semibold px-4 py-2 rounded-lg transition-colors"
+                >
                   Войти
                 </button>
               </div>
