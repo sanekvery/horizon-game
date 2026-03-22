@@ -64,7 +64,7 @@ model PlayerProfile {
   // Прогрессия (общая на все роли)
   totalXP         Int      @default(0) @map("total_xp")
   level           Int      @default(0)
-  stats           Json     @default("{\"strength\":5,\"agility\":5,\"negotiation\":5,\"intellect\":5,\"charisma\":5,\"craft\":5}")
+  stats           Json     @default("{\"strength\":5,\"agility\":5,\"negotiation\":5,\"intellect\":5,\"charisma\":5,\"craft\":5,\"luck\":5,\"endurance\":5,\"leadership\":5,\"perception\":5}")
   availablePoints Int      @default(0) @map("available_points")
 
   // Достижения

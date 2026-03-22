@@ -34,6 +34,27 @@ export interface DiscoveryBonus {
   readonly bonusResourceChance: number;
 }
 
+export interface LuckBonus {
+  readonly critChance: number;
+  readonly isCrit: boolean;
+  readonly multiplier: number;
+}
+
+export interface EnduranceBonus {
+  readonly resistanceChance: number;
+  readonly extraActions: number;
+}
+
+export interface LeadershipBonus {
+  readonly teamBonusPercent: number;
+  readonly affectedPlayers: number;
+}
+
+export interface PerceptionBonus {
+  readonly detectionChance: number;
+  readonly warningActive: boolean;
+}
+
 export class ProgressionCalculator {
   /**
    * Calculate bonus for contributing resources to a zone.
@@ -191,6 +212,94 @@ export class ProgressionCalculator {
   }
 
   /**
+   * Calculate luck-based critical success chance.
+   * Higher luck = more critical successes.
+   *
+   * Formula: critChance = luck * 3%
+   * - luck = 5: 15% chance
+   * - luck = 10: 30% chance
+   * - luck = 15: 45% chance
+   *
+   * Critical success multiplier: 1.5x
+   */
+  static calculateLuckBonus(
+    stats: CharacterStats,
+    randomValue?: number
+  ): LuckBonus {
+    const critChance = stats.luck * 0.03;
+    const roll = randomValue ?? Math.random();
+    const isCrit = roll < critChance;
+    const multiplier = isCrit ? 1.5 : 1.0;
+
+    return {
+      critChance,
+      isCrit,
+      multiplier,
+    };
+  }
+
+  /**
+   * Calculate endurance-based resistance and extra actions.
+   *
+   * Formula:
+   * - resistanceChance = endurance * 4%
+   * - extraActions = floor(endurance / 5)
+   *
+   * - endurance = 5: 20% resistance, +1 action
+   * - endurance = 10: 40% resistance, +2 actions
+   * - endurance = 15: 60% resistance, +3 actions
+   */
+  static calculateEnduranceBonus(stats: CharacterStats): EnduranceBonus {
+    const resistanceChance = stats.endurance * 0.04;
+    const extraActions = Math.floor(stats.endurance / 5);
+
+    return {
+      resistanceChance,
+      extraActions,
+    };
+  }
+
+  /**
+   * Calculate leadership-based team bonus.
+   * Provides percentage bonus to all team members.
+   *
+   * Formula: teamBonusPercent = floor(leadership / 3) * 1%
+   * - leadership = 5: +1% to team
+   * - leadership = 10: +3% to team
+   * - leadership = 15: +5% to team
+   */
+  static calculateLeadershipBonus(
+    stats: CharacterStats,
+    teamSize: number = 4
+  ): LeadershipBonus {
+    const teamBonusPercent = Math.floor(stats.leadership / 3) * 0.01;
+
+    return {
+      teamBonusPercent,
+      affectedPlayers: teamSize,
+    };
+  }
+
+  /**
+   * Calculate perception-based detection bonus.
+   * Improves chance to detect hidden events and dangers.
+   *
+   * Formula: detectionChance = perception * 8%
+   * - perception = 5: 40% detection
+   * - perception = 10: 80% detection
+   * - perception = 13+: 100% + warnings
+   */
+  static calculatePerceptionBonus(stats: CharacterStats): PerceptionBonus {
+    const detectionChance = Math.min(stats.perception * 0.08, 1);
+    const warningActive = stats.perception >= 13;
+
+    return {
+      detectionChance,
+      warningActive,
+    };
+  }
+
+  /**
    * Get dominant stat (highest value).
    */
   static getDominantStat(stats: CharacterStats): {
@@ -204,6 +313,10 @@ export class ProgressionCalculator {
       { name: 'intellect', value: stats.intellect },
       { name: 'charisma', value: stats.charisma },
       { name: 'craft', value: stats.craft },
+      { name: 'luck', value: stats.luck },
+      { name: 'endurance', value: stats.endurance },
+      { name: 'leadership', value: stats.leadership },
+      { name: 'perception', value: stats.perception },
     ];
 
     return statValues.reduce((max, current) =>

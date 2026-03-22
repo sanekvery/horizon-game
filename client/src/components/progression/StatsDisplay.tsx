@@ -13,6 +13,10 @@ export interface CharacterStats {
   intellect: number;
   charisma: number;
   craft: number;
+  luck: number;
+  endurance: number;
+  leadership: number;
+  perception: number;
 }
 
 export interface StatsDisplayProps {
@@ -26,12 +30,16 @@ export interface StatsDisplayProps {
 }
 
 const STAT_CONFIG = {
-  strength: { icon: '💪', name: 'Сила', color: 'bg-red-500' },
+  strength: { icon: '⚔️', name: 'Сила', color: 'bg-red-500' },
   agility: { icon: '🏃', name: 'Ловкость', color: 'bg-green-500' },
-  negotiation: { icon: '🗣️', name: 'Переговоры', color: 'bg-blue-500' },
+  negotiation: { icon: '🗣️', name: 'Переговоры', color: 'bg-amber-500' },
   intellect: { icon: '🧠', name: 'Интеллект', color: 'bg-purple-500' },
-  charisma: { icon: '❤️', name: 'Харизма', color: 'bg-pink-500' },
-  craft: { icon: '🔧', name: 'Мастерство', color: 'bg-amber-500' },
+  charisma: { icon: '💎', name: 'Харизма', color: 'bg-pink-500' },
+  craft: { icon: '🔧', name: 'Мастерство', color: 'bg-teal-500' },
+  luck: { icon: '🍀', name: 'Удача', color: 'bg-emerald-500' },
+  endurance: { icon: '🛡️', name: 'Выносливость', color: 'bg-indigo-500' },
+  leadership: { icon: '👑', name: 'Лидерство', color: 'bg-orange-500' },
+  perception: { icon: '👁️', name: 'Восприятие', color: 'bg-sky-500' },
 } as const;
 
 type StatName = keyof typeof STAT_CONFIG;
@@ -40,7 +48,7 @@ export function StatsDisplay({
   stats,
   level,
   experience,
-  maxStatValue = 10,
+  maxStatValue = 15,
   compact = false,
   showLabels = true,
   className = '',

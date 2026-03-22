@@ -19,12 +19,16 @@ export interface StatsEditorProps {
 }
 
 const STAT_CONFIG = {
-  strength: { icon: '💪', name: 'Сила', description: 'Защита зон, перенос тяжестей' },
-  agility: { icon: '🏃', name: 'Ловкость', description: 'Скорость действий, уклонение' },
-  negotiation: { icon: '🗣️', name: 'Переговоры', description: 'Бонусы при торговле' },
-  intellect: { icon: '🧠', name: 'Интеллект', description: 'Бонусы при исследованиях' },
-  charisma: { icon: '❤️', name: 'Харизма', description: 'Влияние на голосования' },
-  craft: { icon: '🔧', name: 'Мастерство', description: 'Эффективность улучшения зон' },
+  strength: { icon: '⚔️', name: 'Сила', description: 'Защита от урона событий (5%/ур.)' },
+  agility: { icon: '🏃', name: 'Ловкость', description: 'Скорость действий (+5%/ур. выше 5)' },
+  negotiation: { icon: '🗣️', name: 'Переговоры', description: 'Бонус торговли (+2%/ур.)' },
+  intellect: { icon: '🧠', name: 'Интеллект', description: 'Шанс открытий (10%/ур.)' },
+  charisma: { icon: '💎', name: 'Харизма', description: 'Вес голоса (+0.1/ур. выше 5)' },
+  craft: { icon: '🔧', name: 'Мастерство', description: 'Эффективность ресурсов (+5%/ур.)' },
+  luck: { icon: '🍀', name: 'Удача', description: 'Шанс крит. успеха (3%/ур.)' },
+  endurance: { icon: '🛡️', name: 'Выносливость', description: 'Сопротивление, +1 действие за 5 ур.' },
+  leadership: { icon: '👑', name: 'Лидерство', description: 'Бонус команде (+1% за 3 ур.)' },
+  perception: { icon: '👁️', name: 'Восприятие', description: 'Обнаружение скрытого (8%/ур.)' },
 } as const;
 
 export function StatsEditor({

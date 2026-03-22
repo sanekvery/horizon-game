@@ -73,6 +73,7 @@ export function useAuth() {
   const register = useAuthStore((state: AuthState) => state.register);
   const logout = useAuthStore((state: AuthState) => state.logout);
   const clearError = useAuthStore((state: AuthState) => state.clearError);
+  const allocatePoints = useAuthStore((state: AuthState) => state.allocatePoints);
 
   return {
     user,
@@ -84,6 +85,7 @@ export function useAuth() {
     register,
     logout,
     clearError,
+    allocatePoints,
   };
 }
 

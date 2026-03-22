@@ -12,7 +12,13 @@ import { SessionHistoryPage } from './pages/SessionHistoryPage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { RegisterPage } from './pages/auth/RegisterPage';
 import { ProfileDashboard } from './pages/profile/ProfileDashboard';
+import { ProfileOverview } from './pages/profile/ProfileOverview';
+import { ProfileStats } from './pages/profile/ProfileStats';
+import { ProfileAchievements } from './pages/profile/ProfileAchievements';
+import { ProfileHistory } from './pages/profile/ProfileHistory';
+import { ProfileRules } from './pages/profile/ProfileRules';
 import { AuthGuard } from './components/auth/AuthGuard';
+import { ProfileLayout } from './components/profile';
 import { useAuthStore, type AuthState } from './stores/authStore';
 
 // Страница входа (обход ngrok interstitial)
@@ -106,9 +112,25 @@ function AppContent() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      {/* Protected player routes */}
+      {/* Protected player routes with nested layout */}
       <Route
         path="/profile"
+        element={
+          <AuthGuard>
+            <ProfileLayout />
+          </AuthGuard>
+        }
+      >
+        <Route index element={<ProfileOverview />} />
+        <Route path="stats" element={<ProfileStats />} />
+        <Route path="achievements" element={<ProfileAchievements />} />
+        <Route path="history" element={<ProfileHistory />} />
+        <Route path="rules" element={<ProfileRules />} />
+      </Route>
+
+      {/* Legacy profile route for backward compatibility */}
+      <Route
+        path="/profile-old"
         element={
           <AuthGuard>
             <ProfileDashboard />

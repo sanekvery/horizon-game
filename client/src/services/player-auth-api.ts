@@ -33,6 +33,10 @@ export interface CharacterStats {
   intellect: number;
   charisma: number;
   craft: number;
+  luck: number;
+  endurance: number;
+  leadership: number;
+  perception: number;
 }
 
 export interface User {

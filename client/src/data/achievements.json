@@ -1,0 +1,270 @@
+{
+  "achievements": [
+    {
+      "id": "first_steps",
+      "name": "Первые шаги",
+      "description": "Сыграйте свою первую игру",
+      "icon": "👣",
+      "category": "games",
+      "rarity": "common",
+      "condition": { "type": "games_played", "value": 1 }
+    },
+    {
+      "id": "veteran",
+      "name": "Ветеран",
+      "description": "Сыграйте 10 игр",
+      "icon": "🎖️",
+      "category": "games",
+      "rarity": "common",
+      "condition": { "type": "games_played", "value": 10 }
+    },
+    {
+      "id": "city_legend",
+      "name": "Легенда города",
+      "description": "Сыграйте 50 игр",
+      "icon": "🏆",
+      "category": "games",
+      "rarity": "rare",
+      "condition": { "type": "games_played", "value": 50 }
+    },
+    {
+      "id": "first_win",
+      "name": "Победитель",
+      "description": "Выиграйте свою первую игру",
+      "icon": "🥇",
+      "category": "games",
+      "rarity": "common",
+      "condition": { "type": "wins", "value": 1 }
+    },
+    {
+      "id": "unbeatable",
+      "name": "Непобедимый",
+      "description": "Выиграйте 10 игр",
+      "icon": "⚡",
+      "category": "games",
+      "rarity": "rare",
+      "condition": { "type": "wins", "value": 10 }
+    },
+    {
+      "id": "win_streak",
+      "name": "Серия побед",
+      "description": "Выиграйте 3 игры подряд",
+      "icon": "🔥",
+      "category": "games",
+      "rarity": "rare",
+      "condition": { "type": "win_streak", "value": 3 }
+    },
+    {
+      "id": "perfectionist",
+      "name": "Перфекционист",
+      "description": "Все зоны на уровне 3 до финала",
+      "icon": "💯",
+      "category": "games",
+      "rarity": "epic",
+      "condition": { "type": "all_zones_max", "value": true }
+    },
+    {
+      "id": "horizon_master",
+      "name": "Мастер Горизонта",
+      "description": "Выиграйте 25 игр",
+      "icon": "👑",
+      "category": "games",
+      "rarity": "legendary",
+      "condition": { "type": "wins", "value": 25 }
+    },
+
+    {
+      "id": "newbie",
+      "name": "Новичок",
+      "description": "Достигните уровня 5",
+      "icon": "🌱",
+      "category": "progression",
+      "rarity": "common",
+      "condition": { "type": "level", "value": 5 }
+    },
+    {
+      "id": "experienced",
+      "name": "Опытный",
+      "description": "Достигните уровня 10",
+      "icon": "📈",
+      "category": "progression",
+      "rarity": "common",
+      "condition": { "type": "level", "value": 10 }
+    },
+    {
+      "id": "master",
+      "name": "Мастер",
+      "description": "Достигните уровня 20",
+      "icon": "🎓",
+      "category": "progression",
+      "rarity": "rare",
+      "condition": { "type": "level", "value": 20 }
+    },
+    {
+      "id": "grandmaster",
+      "name": "Гранд-мастер",
+      "description": "Достигните уровня 50",
+      "icon": "🌟",
+      "category": "progression",
+      "rarity": "epic",
+      "condition": { "type": "level", "value": 50 }
+    },
+    {
+      "id": "specialization",
+      "name": "Специализация",
+      "description": "Прокачайте любой стат до 10+",
+      "icon": "🎯",
+      "category": "progression",
+      "rarity": "rare",
+      "condition": { "type": "stat_value", "value": 10 }
+    },
+    {
+      "id": "perfection",
+      "name": "Совершенство",
+      "description": "Прокачайте любой стат до максимума (15)",
+      "icon": "✨",
+      "category": "progression",
+      "rarity": "legendary",
+      "condition": { "type": "stat_value", "value": 15 }
+    },
+
+    {
+      "id": "voice_of_people",
+      "name": "Голос народа",
+      "description": "Участвуйте в 50 голосованиях",
+      "icon": "📢",
+      "category": "social",
+      "rarity": "common",
+      "condition": { "type": "votes_cast", "value": 50 }
+    },
+    {
+      "id": "diplomat",
+      "name": "Дипломат",
+      "description": "Выиграйте 20 голосований",
+      "icon": "🤝",
+      "category": "social",
+      "rarity": "rare",
+      "condition": { "type": "votes_won", "value": 20 }
+    },
+    {
+      "id": "promise_keeper",
+      "name": "Обещание сдержано",
+      "description": "Выполните 10 обещаний",
+      "icon": "✅",
+      "category": "social",
+      "rarity": "rare",
+      "condition": { "type": "promises_kept", "value": 10 }
+    },
+    {
+      "id": "man_of_word",
+      "name": "Человек слова",
+      "description": "Выполните 25 обещаний",
+      "icon": "💎",
+      "category": "social",
+      "rarity": "epic",
+      "condition": { "type": "promises_kept", "value": 25 }
+    },
+    {
+      "id": "opinion_leader",
+      "name": "Лидер мнений",
+      "description": "Выиграйте голосование с весом 2.0+",
+      "icon": "📊",
+      "category": "social",
+      "rarity": "epic",
+      "condition": { "type": "vote_weight", "value": 2.0 }
+    },
+
+    {
+      "id": "builder",
+      "name": "Строитель",
+      "description": "Улучшите 10 зон",
+      "icon": "🏗️",
+      "category": "zones",
+      "rarity": "common",
+      "condition": { "type": "zones_upgraded", "value": 10 }
+    },
+    {
+      "id": "architect",
+      "name": "Архитектор",
+      "description": "Улучшите 50 зон",
+      "icon": "🏛️",
+      "category": "zones",
+      "rarity": "rare",
+      "condition": { "type": "zones_upgraded", "value": 50 }
+    },
+    {
+      "id": "generous",
+      "name": "Щедрый",
+      "description": "Внесите 100+ ресурсов за одну игру",
+      "icon": "💰",
+      "category": "zones",
+      "rarity": "rare",
+      "condition": { "type": "resources_per_game", "value": 100 }
+    },
+    {
+      "id": "patron",
+      "name": "Меценат",
+      "description": "Внесите 500+ ресурсов всего",
+      "icon": "💎",
+      "category": "zones",
+      "rarity": "epic",
+      "condition": { "type": "total_resources", "value": 500 }
+    },
+    {
+      "id": "zone_master",
+      "name": "Мастер зоны",
+      "description": "Улучшите зону до максимума за одну игру",
+      "icon": "🏆",
+      "category": "zones",
+      "rarity": "rare",
+      "condition": { "type": "zone_max_level", "value": true }
+    },
+    {
+      "id": "city_builder",
+      "name": "Градостроитель",
+      "description": "Все 4 зоны на максимуме за одну игру",
+      "icon": "🌆",
+      "category": "zones",
+      "rarity": "legendary",
+      "condition": { "type": "all_zones_max_single_game", "value": true }
+    }
+  ],
+  "rarityConfig": {
+    "common": {
+      "name": "Обычное",
+      "color": "#9CA3AF",
+      "bgColor": "#374151",
+      "borderColor": "#4B5563"
+    },
+    "rare": {
+      "name": "Редкое",
+      "color": "#3B82F6",
+      "bgColor": "#1E3A5F",
+      "borderColor": "#2563EB",
+      "glow": true
+    },
+    "epic": {
+      "name": "Эпическое",
+      "color": "#8B5CF6",
+      "bgColor": "#3B2667",
+      "borderColor": "#7C3AED",
+      "glow": true,
+      "animated": true
+    },
+    "legendary": {
+      "name": "Легендарное",
+      "color": "#F59E0B",
+      "bgColor": "#451A03",
+      "borderColor": "#D97706",
+      "glow": true,
+      "animated": true,
+      "particles": true
+    }
+  },
+  "categories": {
+    "games": { "name": "Игровые", "icon": "🎮" },
+    "progression": { "name": "Прогрессия", "icon": "📊" },
+    "social": { "name": "Социальные", "icon": "🤝" },
+    "zones": { "name": "Зоны", "icon": "🏗️" }
+  }
+}
