@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import rulesContent from '../../data/rules-content.json';
 import statsConfig from '../../data/stats-config.json';
+import rolesData from '../../data/roles.json';
 
 interface RuleSection {
   id: string;
@@ -20,7 +21,16 @@ type ContentBlock =
   | { type: 'heading'; text: string }
   | { type: 'list'; items: string[] }
   | { type: 'stats-list' }
+  | { type: 'roles-list' }
   | { type: 'xp-table'; items: { action: string; xp: string; note: string }[] };
+
+const ZONE_NAMES: Record<string, string> = {
+  center: 'Центр',
+  residential: 'Жилая зона',
+  industrial: 'Промышленная зона',
+  green: 'Зелёная зона',
+  unknown: 'Неизвестная территория',
+};
 
 export function ProfileRules() {
   const [expandedSection, setExpandedSection] = useState<string | null>('how-to-play');
@@ -72,6 +82,27 @@ export function ProfileRules() {
                   </div>
                   <p className="text-sm text-[#778DA9] mb-2">{stat.description}</p>
                   <div className="text-xs text-[#415A77] font-mono">{stat.formula}</div>
+                </div>
+              ))}
+            </div>
+          );
+
+        case 'roles-list':
+          return (
+            <div key={index} className="space-y-3 mt-4">
+              {rolesData.map((role) => (
+                <div
+                  key={role.id}
+                  className="bg-[#0D1B2A] rounded-lg p-3 border border-[#415A77]/30"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-[#E0E1DD]">{role.name}</span>
+                    <span className="text-xs text-[#778DA9] bg-[#1B263B] px-2 py-0.5 rounded">
+                      {ZONE_NAMES[role.zone] || role.zone}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#D4A017] mb-1">{role.archetype}</p>
+                  <p className="text-sm text-[#778DA9]">{role.publicMission}</p>
                 </div>
               ))}
             </div>

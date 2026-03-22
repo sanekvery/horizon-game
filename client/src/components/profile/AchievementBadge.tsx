@@ -123,16 +123,16 @@ export function AchievementBadge({
             ${unlocked ? 'bg-[#0D1B2A]' : 'bg-[#0D1B2A]/50'}
             ${isAnimated && unlocked ? 'animate-pulse' : ''}
           `}>
-            {unlocked ? achievement.icon : '❓'}
+            {achievement.icon}
           </div>
 
           {/* Info */}
           <div className="flex-1 min-w-0">
             <h3 className={`font-bold truncate ${unlocked ? styles.text : 'text-[#778DA9]'}`}>
-              {unlocked ? achievement.name : '???'}
+              {achievement.name}
             </h3>
             <p className="text-sm text-[#778DA9] line-clamp-2">
-              {unlocked ? achievement.description : 'Скрытое достижение'}
+              {achievement.description}
             </p>
           </div>
         </div>
@@ -148,7 +148,7 @@ export function AchievementBadge({
             </span>
           )}
           {!unlocked && (
-            <span className="text-xs text-[#778DA9]">Заблокировано</span>
+            <span className="text-xs text-[#778DA9]">Не получено</span>
           )}
         </div>
       </div>

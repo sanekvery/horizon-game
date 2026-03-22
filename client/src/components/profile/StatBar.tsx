@@ -90,15 +90,11 @@ export function StatBar({
         </div>
       </div>
 
-      {/* Tooltip */}
+      {/* Tooltip - показывается снизу */}
       {showTooltip && isTooltipVisible && (
-        <div className="absolute left-full top-0 ml-3 z-50 w-64">
+        <div className="absolute left-0 right-0 top-full mt-2 z-50">
           <div className="bg-[#0D1B2A] border border-[#415A77] rounded-lg p-4 shadow-xl">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-xl">{statData.icon}</span>
-              <span className="font-bold text-[#D4A017]">{statData.name}</span>
-            </div>
-            <p className="text-sm text-[#778DA9] mb-3">{statData.description}</p>
+            <p className="text-sm text-[#778DA9] mb-2">{statData.description}</p>
 
             {/* Current effect */}
             {currentEffect && (
@@ -109,7 +105,7 @@ export function StatBar({
             )}
 
             {/* Formula */}
-            <p className="text-xs text-[#415A77] font-mono">{statData.formula}</p>
+            <p className="text-xs text-[#415A77] font-mono break-all">{statData.formula}</p>
           </div>
         </div>
       )}

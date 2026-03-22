@@ -207,12 +207,12 @@ export function ProfileStats() {
         </div>
       )}
 
-      {/* Total Points Summary */}
+      {/* Points Summary */}
       <div className="bg-[#1B263B]/50 rounded-xl p-4">
         <div className="flex justify-between text-sm text-[#778DA9]">
-          <span>Всего очков распределено:</span>
-          <span className="text-[#D4A017] font-medium">
-            {STAT_IDS.reduce((sum, id) => sum + playerProfile.stats[id], 0)}
+          <span>Очков к распределению:</span>
+          <span className={`font-medium ${playerProfile.availablePoints > 0 ? 'text-purple-400' : 'text-[#778DA9]'}`}>
+            {playerProfile.availablePoints}
           </span>
         </div>
       </div>
